@@ -2,6 +2,7 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -244,6 +245,52 @@ app.get('/debug/test-whatsapp', async (req, res) => {
   }
 });
 
+// Debug endpoint to see what environment variables are actually loaded
+app.get('/debug/env', (req, res) => {
+  const envVars = {};
+  const relevantKeys = [
+    'CLAUDE_API_KEY',
+    'CLAUDE_MODEL',
+    'SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'NEXT_PUBLIC_PROXE_SUPABASE_URL',
+    'SUPABASE_KEY',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'PORT',
+    'NODE_ENV'
+  ];
+  
+  relevantKeys.forEach(key => {
+    const value = process.env[key];
+    envVars[key] = {
+      exists: !!value,
+      length: value ? value.length : 0,
+      isEmpty: value ? (value.trim().length === 0) : true,
+      preview: value ? `${value.substring(0, 15)}...` : null,
+      firstChars: value ? value.substring(0, 10) : null
+    };
+  });
+  
+  // Also check .env.local file location
+  const envLocalPath = path.join(__dirname, '..', '.env.local');
+  const envPath = path.join(__dirname, '..', '.env');
+  
+  res.json({
+    envVars,
+    filePaths: {
+      envLocal: envLocalPath,
+      envLocalExists: existsSync(envLocalPath),
+      env: envPath,
+      envExists: existsSync(envPath),
+      cwd: process.cwd(),
+      __dirname: __dirname
+    }
+  });
+});
+
 // Clear errors endpoint
 // Status endpoints
 app.get('/status/env', (req, res) => {
@@ -289,7 +336,9 @@ app.get('/status/env', (req, res) => {
     {
       name: 'CLAUDE_API_KEY',
       set: !!process.env.CLAUDE_API_KEY,
-      preview: process.env.CLAUDE_API_KEY ? `${process.env.CLAUDE_API_KEY.substring(0, 10)}...` : null
+      preview: process.env.CLAUDE_API_KEY ? `${process.env.CLAUDE_API_KEY.substring(0, 10)}...` : null,
+      length: process.env.CLAUDE_API_KEY ? process.env.CLAUDE_API_KEY.length : 0,
+      isEmpty: process.env.CLAUDE_API_KEY ? (process.env.CLAUDE_API_KEY.trim().length === 0) : true
     },
     {
       name: 'CLAUDE_MODEL',
@@ -331,14 +380,37 @@ app.get('/status/api', async (req, res) => {
   
   // Check Claude API
   try {
-    const { claudeClient, CLAUDE_MODEL } = await import('./config/claude.js');
-    if (claudeClient && process.env.CLAUDE_API_KEY) {
-      apis.Claude = { valid: true, model: CLAUDE_MODEL };
+    // First check if the key exists in environment
+    const hasKey = !!process.env.CLAUDE_API_KEY && process.env.CLAUDE_API_KEY.trim().length > 0;
+    
+    if (!hasKey) {
+      apis.Claude = { 
+        valid: false, 
+        error: 'API key not configured',
+        debug: {
+          exists: !!process.env.CLAUDE_API_KEY,
+          length: process.env.CLAUDE_API_KEY ? process.env.CLAUDE_API_KEY.length : 0,
+          isEmpty: process.env.CLAUDE_API_KEY ? (process.env.CLAUDE_API_KEY.trim().length === 0) : true
+        }
+      };
     } else {
-      apis.Claude = { valid: false, error: 'API key not configured' };
+      // Try to import and use the client
+      const { claudeClient, CLAUDE_MODEL } = await import('./config/claude.js');
+      if (claudeClient) {
+        apis.Claude = { valid: true, model: CLAUDE_MODEL };
+      } else {
+        apis.Claude = { valid: false, error: 'Client initialization failed' };
+      }
     }
   } catch (error) {
-    apis.Claude = { valid: false, error: error.message };
+    apis.Claude = { 
+      valid: false, 
+      error: error.message,
+      debug: {
+        hasKey: !!process.env.CLAUDE_API_KEY,
+        keyLength: process.env.CLAUDE_API_KEY ? process.env.CLAUDE_API_KEY.length : 0
+      }
+    };
   }
   
   // Check Supabase API
