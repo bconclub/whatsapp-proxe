@@ -83,7 +83,7 @@ echo ""
 echo "Next steps:"
 echo "   1. Update .env with your credentials"
 echo "   2. Run database schema in Supabase"
-echo "   3. Start server: npm run dev (development) or pm2 start ecosystem.config.js (production)"
+echo "   3. Start server: npm run dev (development) or pm2 start ecosystem.config.cjs (production)"
 echo "   4. Test: curl http://localhost:3000/health"
 
 

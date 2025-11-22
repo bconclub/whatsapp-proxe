@@ -54,7 +54,7 @@ n8n Webhook → Backend Service → Supabase → Claude API → JSON Response �
    npm run dev
 
    # Production with PM2
-   pm2 start ecosystem.config.js
+   pm2 start ecosystem.config.cjs
    ```
 
 ## Environment Variables
@@ -164,7 +164,7 @@ See `src/database/schema.sql` for full schema.
 ### PM2 (Recommended)
 
 ```bash
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 pm2 save
 pm2 startup
 ```

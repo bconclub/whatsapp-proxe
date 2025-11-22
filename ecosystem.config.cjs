@@ -1,6 +1,6 @@
 /**
  * PM2 Ecosystem Configuration
- * Run with: pm2 start ecosystem.config.js
+ * Run with: pm2 start ecosystem.config.cjs
  */
 
 module.exports = {
@@ -39,6 +39,4 @@ module.exports = {
     restart_delay: 4000
   }]
 };
-
-
 

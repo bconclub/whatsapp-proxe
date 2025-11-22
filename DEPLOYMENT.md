@@ -58,7 +58,7 @@ Required variables:
 
 ```bash
 # Start application
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 
 # Save PM2 configuration
 pm2 save
@@ -186,7 +186,7 @@ pm2 stop proxe-whatsapp-backend
 - Review Claude service status
 
 ### High memory usage
-- Reduce PM2 instances in `ecosystem.config.js`
+- Reduce PM2 instances in `ecosystem.config.cjs`
 - Set `max_memory_restart: '300M'`
 - Monitor with `pm2 monit`
 

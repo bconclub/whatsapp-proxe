@@ -52,7 +52,7 @@
 - **Logger** (`src/utils/logger.js`) - Winston-based logging
 
 ### 5. PM2 Configuration ✅
-- **Ecosystem Config** (`ecosystem.config.js`)
+- **Ecosystem Config** (`ecosystem.config.cjs`)
   - Cluster mode (2 instances)
   - Auto-restart
   - Logging configuration
@@ -119,7 +119,7 @@ whatsapp-proxe-backend/
 ├── logs/                          # Application logs
 ├── .github/workflows/             # CI/CD
 ├── package.json                   # Dependencies
-├── ecosystem.config.js            # PM2 config
+├── ecosystem.config.cjs            # PM2 config
 ├── jest.config.js                 # Test config
 ├── README.md                      # Main docs
 ├── DEPLOYMENT.md                  # Deployment guide
