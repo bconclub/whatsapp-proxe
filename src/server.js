@@ -97,6 +97,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Status page
+app.get('/status', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'status.html'));
+});
+
 // Debug endpoint to see recent errors
 app.get('/debug/errors', (req, res) => {
   const errors = getRecentErrors();
@@ -240,6 +245,72 @@ app.get('/debug/test-whatsapp', async (req, res) => {
 });
 
 // Clear errors endpoint
+// Status endpoints
+app.get('/status/env', (req, res) => {
+  const requiredKeys = [
+    'SUPABASE_URL',
+    'SUPABASE_KEY',
+    'SUPABASE_SERVICE_KEY',
+    'CLAUDE_API_KEY',
+    'CLAUDE_MODEL',
+    'PORT',
+    'NODE_ENV'
+  ];
+  
+  const keys = requiredKeys.map(key => ({
+    name: key,
+    set: !!process.env[key],
+    preview: process.env[key] ? `${process.env[key].substring(0, 10)}...` : null
+  }));
+  
+  res.json({ keys });
+});
+
+app.get('/status/database', async (req, res) => {
+  try {
+    const { supabase } = await import('./config/supabase.js');
+    const { data, error } = await supabase.from('all_leads').select('count').limit(1);
+    
+    if (error) {
+      res.json({ connected: false, message: error.message });
+    } else {
+      res.json({ connected: true, message: 'Database connection successful' });
+    }
+  } catch (error) {
+    res.json({ connected: false, message: error.message });
+  }
+});
+
+app.get('/status/api', async (req, res) => {
+  const apis = {};
+  
+  // Check Claude API
+  try {
+    const { claudeClient, CLAUDE_MODEL } = await import('./config/claude.js');
+    if (claudeClient && process.env.CLAUDE_API_KEY) {
+      apis.Claude = { valid: true, model: CLAUDE_MODEL };
+    } else {
+      apis.Claude = { valid: false, error: 'API key not configured' };
+    }
+  } catch (error) {
+    apis.Claude = { valid: false, error: error.message };
+  }
+  
+  // Check Supabase API
+  try {
+    const { supabase } = await import('./config/supabase.js');
+    if (supabase && process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+      apis.Supabase = { valid: true };
+    } else {
+      apis.Supabase = { valid: false, error: 'Credentials not configured' };
+    }
+  } catch (error) {
+    apis.Supabase = { valid: false, error: error.message };
+  }
+  
+  res.json({ apis });
+});
+
 app.post('/debug/clear-errors', (req, res) => {
   // This would need to be implemented in errorHandler
   res.json({ message: 'Use error handler clear function' });
