@@ -17,24 +17,45 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_DEPLOY_KEY }}
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          timeout: 30s
           script: |
+            set -e  # Exit on error
+            
+            echo "🚀 Starting deployment..."
+            echo "Current user: $(whoami)"
+            echo "Current directory: $(pwd)"
+            
+            # Create directory if it doesn't exist
             mkdir -p /var/www/whatsapp-proxe
             cd /var/www/whatsapp-proxe
             
+            # Git operations
             if [ -d ".git" ]; then
+              echo "📥 Pulling latest changes..."
               git pull origin main
             else
+              echo "📥 Cloning repository..."
               git clone https://github.com/bconclub/whatsapp-proxe.git .
             fi
             
+            # Install dependencies
+            echo "📦 Installing dependencies..."
             npm install --production
             
+            # PM2 operations
+            echo "🔄 Managing PM2 process..."
             if pm2 describe whatsapp-proxe > /dev/null 2>&1; then
+              echo "♻️  Restarting existing PM2 process..."
               pm2 restart whatsapp-proxe
             else
+              echo "▶️  Starting new PM2 process..."
               pm2 start ecosystem.config.js
               pm2 save
             fi
+            
+            echo "✅ Deployment complete!"
+            pm2 status
