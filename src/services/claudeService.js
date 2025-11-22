@@ -8,9 +8,12 @@ import { queryKnowledgeBase, formatKnowledgeContext } from './knowledgeBaseServi
  */
 export async function generateResponse(customerContext, message, conversationHistory) {
   try {
-    // Query knowledge base for relevant information
+    // Skip knowledge base for simple greetings (saves ~1-2s per request)
+    const simpleGreeting = /^(hi|hello|hey|hii+|good\s*(morning|evening|afternoon)|thanks|thank you|ok|okay|bye)[\s!.]*$/i.test(message.trim());
+    
+    // Query knowledge base for relevant information (reduced from 5 to 2 results for faster queries)
     // The knowledge base now contains PROXe AI Operating System information
-    const knowledgeResults = await queryKnowledgeBase(message, 5);
+    const knowledgeResults = simpleGreeting ? [] : await queryKnowledgeBase(message, 2);
     let knowledgeContext = formatKnowledgeContext(knowledgeResults);
     
     // If no results found and question is about PROXe, add clarification
