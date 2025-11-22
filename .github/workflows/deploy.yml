@@ -69,23 +69,15 @@ jobs:
               echo "⚠️  See env.template for required variables."
             fi
             
-            # PM2 operations - ensure clean stop
+            # PM2 operations - graceful reload
             echo "🔄 Managing PM2 process..."
             if pm2 describe whatsapp-proxe > /dev/null 2>&1; then
-              echo "♻️  Stopping existing PM2 process..."
-              pm2 stop whatsapp-proxe || true
-              sleep 2
-              pm2 delete whatsapp-proxe || true
-              sleep 1
+              echo "♻️  Reloading existing PM2 process (zero-downtime)..."
+              pm2 reload whatsapp-proxe
+            else
+              echo "▶️  Starting new PM2 process..."
+              pm2 start ecosystem.config.cjs
             fi
-            
-            # Kill any process still using port 3001
-            echo "🔍 Checking for processes on port 3001..."
-            lsof -ti:3001 | xargs kill -9 2>/dev/null || echo "No processes found on port 3001"
-            sleep 1
-            
-            echo "▶️  Starting PM2 process..."
-            pm2 start ecosystem.config.cjs
             pm2 save
             
             echo "✅ Deployment complete!"
