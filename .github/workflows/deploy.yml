@@ -63,11 +63,21 @@ jobs:
             echo "📦 Installing dependencies..."
             npm install --production
             
-            # Check for .env.local file
+            # Check for .env.local file and run environment check
             if [ ! -f ".env.local" ] && [ ! -f ".env" ]; then
               echo "⚠️  WARNING: Neither .env.local nor .env found!"
               echo "⚠️  Please create .env.local with your environment variables."
               echo "⚠️  See env.template for required variables."
+              echo ""
+              echo "📝 To fix this, SSH into the VPS and run:"
+              echo "   cd /var/www/whatsapp-proxe"
+              echo "   cp env.template .env.local"
+              echo "   nano .env.local  # Add your credentials"
+              echo "   pm2 restart whatsapp-proxe"
+            else
+              echo "✅ Environment file found, running checks..."
+              chmod +x scripts/check-env.sh 2>/dev/null || true
+              bash scripts/check-env.sh || echo "⚠️  Environment check had warnings"
             fi
             
             # PM2 operations - graceful reload
