@@ -11,11 +11,11 @@ module.exports = {
     exec_mode: 'cluster',
     env: {
       NODE_ENV: 'production',
-      PORT: 3001
+      PORT: 3000
     },
     env_production: {
       NODE_ENV: 'production',
-      PORT: 3001
+      PORT: 3000
     },
     // Logging
     error_file: './logs/pm2-error.log',
