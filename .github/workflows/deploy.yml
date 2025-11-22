@@ -62,12 +62,28 @@ jobs:
             echo "📦 Installing dependencies..."
             npm install --production
             
-            # PM2 operations
+            # Check for .env.local file
+            if [ ! -f ".env.local" ] && [ ! -f ".env" ]; then
+              echo "⚠️  WARNING: Neither .env.local nor .env found!"
+              echo "⚠️  Please create .env.local with your environment variables."
+              echo "⚠️  See env.template for required variables."
+            fi
+            
+            # PM2 operations - ensure clean stop
             echo "🔄 Managing PM2 process..."
             if pm2 describe whatsapp-proxe > /dev/null 2>&1; then
               echo "♻️  Stopping existing PM2 process..."
+              pm2 stop whatsapp-proxe || true
+              sleep 2
               pm2 delete whatsapp-proxe || true
+              sleep 1
             fi
+            
+            # Kill any process still using port 3001
+            echo "🔍 Checking for processes on port 3001..."
+            lsof -ti:3001 | xargs kill -9 2>/dev/null || echo "No processes found on port 3001"
+            sleep 1
+            
             echo "▶️  Starting PM2 process..."
             pm2 start ecosystem.config.cjs
             pm2 save
