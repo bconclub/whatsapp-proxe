@@ -2,63 +2,117 @@ import { supabase } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Get or create customer by phone number (sessionId)
+ * Normalize phone number (remove all non-digits)
  */
-export async function getOrCreateCustomer(sessionId, profileName = null) {
+function normalizePhoneNumber(phone) {
+  return phone.replace(/\D/g, '');
+}
+
+/**
+ * Get or create lead in all_leads by phone number
+ * @param {string} phone - Phone number (original format)
+ * @param {string} brand - Brand name ('proxe' or 'windchasers')
+ * @param {object} leadData - Optional lead data (name, email, etc.)
+ * @returns {Promise<object>} Lead object from all_leads
+ */
+export async function getOrCreateLead(phone, brand = 'proxe', leadData = {}) {
   try {
-    // Try to find existing customer
+    const normalizedPhone = normalizePhoneNumber(phone);
+    
+    // Try to find existing lead
     const { data: existing, error: fetchError } = await supabase
-      .from('customers')
+      .from('all_leads')
       .select('*')
-      .eq('phone', sessionId)
+      .eq('customer_phone_normalized', normalizedPhone)
+      .eq('brand', brand)
       .single();
 
     if (existing) {
-      logger.info(`Found existing customer: ${existing.id}`);
-      return existing;
+      logger.info(`Found existing lead: ${existing.id}`);
+      
+      // Update last interaction
+      const { data: updated } = await supabase
+        .from('all_leads')
+        .update({
+          last_touchpoint: 'whatsapp',
+          last_interaction_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id)
+        .select()
+        .single();
+      
+      return updated || existing;
     }
 
-    // Create new customer
-    const { data: newCustomer, error: createError } = await supabase
-      .from('customers')
+    // Create new lead
+    const { data: newLead, error: createError } = await supabase
+      .from('all_leads')
       .insert({
-        phone: sessionId,
-        name: profileName || `Customer ${sessionId}`,
+        customer_phone_normalized: normalizedPhone,
+        phone: phone,
+        customer_name: leadData.profileName || leadData.name || null,
+        email: leadData.email || null,
+        first_touchpoint: 'whatsapp',
+        last_touchpoint: 'whatsapp',
+        brand: brand,
+        last_interaction_at: new Date().toISOString(),
+        unified_context: leadData.metadata || {},
         created_at: new Date().toISOString(),
-        last_contacted: new Date().toISOString(),
-        message_count: 0,
-        status: 'lead',
-        tags: [],
-        metadata: {}
+        updated_at: new Date().toISOString()
       })
       .select()
       .single();
 
     if (createError) {
-      logger.error('Error creating customer:', createError);
+      logger.error('Error creating lead:', createError);
       throw createError;
     }
 
-    logger.info(`Created new customer: ${newCustomer.id}`);
-    return newCustomer;
+    logger.info(`Created new lead: ${newLead.id}`);
+    return newLead;
   } catch (error) {
-    logger.error('Error in getOrCreateCustomer:', error);
+    logger.error('Error in getOrCreateLead:', error);
     throw error;
   }
 }
 
 /**
- * Get customer by ID
+ * Get or create customer by phone number (sessionId) - Legacy compatibility
+ * Maps to getOrCreateLead for backward compatibility
  */
-export async function getCustomerById(customerId) {
+export async function getOrCreateCustomer(sessionId, profileName = null, brand = 'proxe') {
+  const lead = await getOrCreateLead(sessionId, brand, { profileName, name: profileName });
+  
+  // Map lead to customer-like object for backward compatibility
+  return {
+    id: lead.id,
+    phone: lead.phone,
+    name: lead.customer_name,
+    company: null, // Not in all_leads schema
+    created_at: lead.created_at,
+    last_contacted: lead.last_interaction_at,
+    message_count: 0, // Will be tracked in whatsapp_sessions
+    status: 'lead', // Default
+    tags: [], // Store in unified_context if needed
+    metadata: lead.unified_context || {}
+  };
+}
+
+/**
+ * Get lead by ID
+ * @param {string} leadId - Lead UUID
+ * @returns {Promise<object>} Lead object
+ */
+export async function getLeadById(leadId) {
   const { data, error } = await supabase
-    .from('customers')
+    .from('all_leads')
     .select('*')
-    .eq('id', customerId)
+    .eq('id', leadId)
     .single();
 
   if (error) {
-    logger.error('Error fetching customer:', error);
+    logger.error('Error fetching lead:', error);
     throw error;
   }
 
@@ -66,76 +120,114 @@ export async function getCustomerById(customerId) {
 }
 
 /**
- * Update customer last contacted timestamp and increment message count
+ * Get customer by ID - Legacy compatibility
  */
-export async function updateCustomerContact(customerId) {
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('message_count')
-    .eq('id', customerId)
-    .single();
+export async function getCustomerById(customerId) {
+  const lead = await getLeadById(customerId);
+  
+  // Map to customer-like object
+  return {
+    id: lead.id,
+    phone: lead.phone,
+    name: lead.customer_name,
+    company: null,
+    created_at: lead.created_at,
+    last_contacted: lead.last_interaction_at,
+    message_count: 0,
+    status: 'lead',
+    tags: [],
+    metadata: lead.unified_context || {}
+  };
+}
 
+/**
+ * Update lead last interaction
+ * @param {string} leadId - Lead UUID
+ */
+export async function updateLeadContact(leadId) {
   const { error } = await supabase
-    .from('customers')
+    .from('all_leads')
     .update({
-      last_contacted: new Date().toISOString(),
-      message_count: (customer?.message_count || 0) + 1
+      last_touchpoint: 'whatsapp',
+      last_interaction_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     })
-    .eq('id', customerId);
+    .eq('id', leadId);
 
   if (error) {
-    logger.error('Error updating customer contact:', error);
+    logger.error('Error updating lead contact:', error);
     throw error;
   }
 }
 
 /**
- * Build full customer context for AI
+ * Update customer last contacted - Legacy compatibility
  */
-export async function buildCustomerContext(sessionId) {
-  try {
-    const customer = await getOrCreateCustomer(sessionId);
-    
-    // Fetch conversation history
-    const { data: messages } = await supabase
-      .from('conversation_history')
-      .select('*')
-      .eq('customer_id', customer.id)
-      .order('timestamp', { ascending: false })
-      .limit(20);
+export async function updateCustomerContact(customerId) {
+  await updateLeadContact(customerId);
+}
 
-    // Fetch recent logs for summary
-    const { data: logs } = await supabase
-      .from('conversation_logs')
-      .select('customer_message, ai_response')
-      .eq('customer_id', customer.id)
+/**
+ * Build full customer context for AI
+ * Uses all_leads, whatsapp_sessions, and messages tables
+ */
+export async function buildCustomerContext(sessionId, brand = 'proxe') {
+  try {
+    // Get or create lead
+    const lead = await getOrCreateLead(sessionId, brand);
+    
+    // Get WhatsApp session
+    const { data: session } = await supabase
+      .from('whatsapp_sessions')
+      .select('*')
+      .eq('external_session_id', sessionId)
+      .eq('brand', brand)
+      .single();
+    
+    // Fetch conversation history from messages table
+    const { data: messages } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('lead_id', lead.id)
+      .eq('channel', 'whatsapp')
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(20);
 
     // Extract interests and patterns from messages
     const previousInterests = extractInterests(messages || []);
-    const conversationPhase = determinePhase(messages || [], logs || []);
+    const conversationPhase = determinePhase(messages || []);
 
-    return {
-      customerId: customer.id,
-      name: customer.name,
-      phone: customer.phone,
-      company: customer.company,
-      firstContact: customer.created_at,
-      lastContact: customer.last_contacted,
-      conversationCount: customer.message_count,
+    // Build context object
+    const context = {
+      customerId: lead.id,
+      leadId: lead.id, // Add leadId for clarity
+      name: lead.customer_name || session?.customer_name,
+      phone: lead.phone,
+      brand: lead.brand,
+      firstTouchpoint: lead.first_touchpoint,
+      lastTouchpoint: lead.last_touchpoint,
+      firstContact: lead.created_at,
+      lastContact: lead.last_interaction_at,
+      conversationCount: session?.message_count || 0,
       conversationPhase,
       previousInterests,
-      budget: customer.metadata?.budget || null,
-      conversationSummary: generateSummary(messages || [], logs || []),
+      budget: lead.unified_context?.budget || null,
+      conversationSummary: session?.conversation_summary || generateSummary(messages || []),
       lastMessages: (messages || []).slice(0, 10).reverse().map(msg => ({
-        role: msg.role,
-        content: msg.message,
-        timestamp: msg.timestamp
+        role: msg.sender === 'customer' ? 'user' : 'assistant',
+        content: msg.content,
+        timestamp: msg.created_at
       })),
-      tags: customer.tags || [],
-      metadata: customer.metadata || {}
+      tags: lead.unified_context?.tags || [],
+      metadata: lead.unified_context || {},
+      sessionData: session ? {
+        sessionId: session.id,
+        conversationStatus: session.conversation_status || 'active', // Use conversation_status instead of session_status
+        lastMessageAt: session.last_message_at
+      } : null
     };
+
+    return context;
   } catch (error) {
     logger.error('Error building customer context:', error);
     throw error;
@@ -150,7 +242,7 @@ function extractInterests(messages) {
   const keywords = ['property', 'properties', 'sqft', 'budget', 'location', 'area', 'rent'];
   
   messages.forEach(msg => {
-    const content = msg.message?.toLowerCase() || '';
+    const content = msg.content?.toLowerCase() || '';
     keywords.forEach(keyword => {
       if (content.includes(keyword)) {
         const context = extractContext(content, keyword);
@@ -174,7 +266,7 @@ function extractContext(text, keyword) {
 /**
  * Determine conversation phase
  */
-function determinePhase(messages, logs) {
+function determinePhase(messages) {
   const messageCount = messages.length;
   if (messageCount === 0) return 'discovery';
   if (messageCount < 3) return 'discovery';
@@ -185,16 +277,15 @@ function determinePhase(messages, logs) {
 /**
  * Generate conversation summary
  */
-function generateSummary(messages, logs) {
+function generateSummary(messages) {
   if (messages.length === 0) {
     return 'New customer, no previous conversation.';
   }
 
   const recentMessages = messages.slice(0, 5).reverse();
   const summary = recentMessages
-    .map(msg => `${msg.role}: ${msg.message}`)
+    .map(msg => `${msg.sender}: ${msg.content}`)
     .join(' | ');
 
   return summary.length > 500 ? summary.substring(0, 500) + '...' : summary;
 }
-

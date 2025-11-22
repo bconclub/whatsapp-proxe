@@ -1,12 +1,34 @@
 import { claudeClient, CLAUDE_MODEL, CLAUDE_MAX_TOKENS } from '../config/claude.js';
 import { logger } from '../utils/logger.js';
+import { getProxeSystemPrompt } from '../prompts/proxe-prompt.js';
+import { queryKnowledgeBase, formatKnowledgeContext } from './knowledgeBaseService.js';
 
 /**
  * Generate AI response using Claude API
  */
 export async function generateResponse(customerContext, message, conversationHistory) {
   try {
-    const systemPrompt = buildSystemPrompt(customerContext);
+    // Query knowledge base for relevant information
+    // The knowledge base now contains PROXe AI Operating System information
+    const knowledgeResults = await queryKnowledgeBase(message, 5);
+    let knowledgeContext = formatKnowledgeContext(knowledgeResults);
+    
+    // If no results found and question is about PROXe, add clarification
+    const isProxeQuestion = /what\s+is\s+proxe|tell\s+me\s+about\s+proxe|explain\s+proxe|proxe\s+is|proxe\s+does/i.test(message);
+    if (isProxeQuestion && (!knowledgeResults || knowledgeResults.length === 0)) {
+      knowledgeContext = 'Note: When asked about PROXe, refer ONLY to the AI Operating System definition above. PROXe is the AI Operating System for Businesses, NOT a property or commercial project.';
+    }
+    
+    // Build customer context string
+    const customerContextStr = buildCustomerContextNote(customerContext);
+    
+    // Combine knowledge base and customer context
+    const fullContext = customerContextStr 
+      ? `${knowledgeContext}\n\n=================================================================================\nCUSTOMER CONTEXT\n=================================================================================\n${customerContextStr}`
+      : knowledgeContext;
+    
+    // Build PROXe system prompt with full context
+    const systemPrompt = getProxeSystemPrompt(fullContext);
     
     // Build messages array for Claude
     const messages = [
@@ -51,47 +73,58 @@ export async function generateResponse(customerContext, message, conversationHis
     };
   } catch (error) {
     logger.error('Error generating Claude response:', error);
-    throw error;
+    
+    // Provide more helpful error messages
+    let errorMessage = error.message || 'Unknown error';
+    if (error.status === 401 || errorMessage.includes('authentication') || errorMessage.includes('invalid x-api-key')) {
+      errorMessage = `Claude API authentication failed. Please check your CLAUDE_API_KEY in .env.local. Error: ${errorMessage}`;
+    } else if (error.status === 429) {
+      errorMessage = `Claude API rate limit exceeded. Please try again later.`;
+    } else if (error.status >= 500) {
+      errorMessage = `Claude API server error (${error.status}). Please try again later.`;
+    }
+    
+    const enhancedError = new Error(errorMessage);
+    enhancedError.originalError = error;
+    enhancedError.statusCode = error.status || 500;
+    throw enhancedError;
   }
 }
 
 /**
- * Build system prompt with customer context
+ * Build customer context note for inclusion in messages
+ * This provides context about the customer without cluttering the system prompt
  */
-function buildSystemPrompt(context) {
-  return `You are GVS Ventures' AI agent for WhatsApp customer support. You are knowledgeable, friendly, and professional.
-
-CUSTOMER CONTEXT:
-- Name: ${context.name}
-- Phone: ${context.phone}
-- Company: ${context.company || 'Not provided'}
-- First Contact: ${context.firstContact}
-- Conversation Count: ${context.conversationCount}
-- Phase: ${context.conversationPhase}
-- Previous Interests: ${context.previousInterests.join(', ') || 'None yet'}
-- Budget: ${context.budget || 'Not specified'}
-- Tags: ${context.tags.join(', ') || 'None'}
-
-CONVERSATION SUMMARY:
-${context.conversationSummary}
-
-YOUR ROLE:
-1. Talk like you've known them forever - reference past conversations naturally
-2. Provide specific, valuable information (not generic responses)
-3. Ask clarifying questions to move them toward decision
-4. When appropriate, suggest scheduling a call
-5. Use their name occasionally to feel personal
-6. Be concise but warm - WhatsApp messages should be readable
-
-RESPONSE FORMATTING:
-- Write naturally, but you can indicate button suggestions using this format:
-  → BUTTON: [Button Label]
-- For multiple buttons, use multiple lines:
-  → BUTTON: View Properties
-  → BUTTON: Schedule Call
-- If no buttons needed, just write the text response
-
-Keep responses conversational and helpful.`;
+function buildCustomerContextNote(context) {
+  if (!context) return null;
+  
+  const parts = [];
+  
+  if (context.name) {
+    parts.push(`Customer: ${context.name}`);
+  }
+  
+  if (context.conversationCount > 0) {
+    parts.push(`Previous conversations: ${context.conversationCount}`);
+  }
+  
+  if (context.conversationPhase) {
+    parts.push(`Phase: ${context.conversationPhase}`);
+  }
+  
+  if (context.previousInterests && context.previousInterests.length > 0) {
+    parts.push(`Interests: ${context.previousInterests.join(', ')}`);
+  }
+  
+  if (context.budget) {
+    parts.push(`Budget: ${context.budget}`);
+  }
+  
+  if (context.conversationSummary && context.conversationSummary !== 'New customer, no previous conversation.') {
+    parts.push(`Summary: ${context.conversationSummary}`);
+  }
+  
+  return parts.length > 0 ? parts.join('\n') : null;
 }
 
 /**

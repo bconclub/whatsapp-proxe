@@ -11,13 +11,13 @@ const router = express.Router();
  */
 router.post('/context', async (req, res, next) => {
   try {
-    const { sessionId } = req.body;
+    const { sessionId, brand = 'proxe' } = req.body;
 
     if (!sessionId) {
       throw new AppError('sessionId is required', 400);
     }
 
-    const context = await buildCustomerContext(sessionId);
+    const context = await buildCustomerContext(sessionId, brand);
     res.json(context);
   } catch (error) {
     next(error);
@@ -31,12 +31,13 @@ router.post('/context', async (req, res, next) => {
 router.get('/:sessionId', async (req, res, next) => {
   try {
     const { sessionId } = req.params;
+    const { brand = 'proxe' } = req.query;
 
     if (!sessionId || sessionId.length < 10) {
       throw new AppError('Invalid sessionId', 400);
     }
 
-    const customer = await getOrCreateCustomer(sessionId);
+    const customer = await getOrCreateCustomer(sessionId, null, brand);
     res.json(customer);
   } catch (error) {
     next(error);

@@ -2,26 +2,36 @@ import { supabase } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Query knowledge base using vector similarity search
+ * Query knowledge base using the search function or fallback to text search
  */
 export async function queryKnowledgeBase(query, limit = 5) {
   try {
-    // For now, using text search until pgvector is set up
-    // TODO: Implement proper vector similarity search with embeddings
+    // Try using the search_knowledge_base function first (if it exists)
+    const { data: functionResults, error: functionError } = await supabase
+      .rpc('search_knowledge_base', {
+        search_query: query,
+        limit_results: limit
+      });
+
+    if (!functionError && functionResults && functionResults.length > 0) {
+      logger.info(`Found ${functionResults.length} results using search function`);
+      return functionResults;
+    }
+
+    // Fallback to direct table query with multiple search fields
+    logger.warn('Search function not available, using direct table query');
     
+    // Search across question, answer, content, and tags
     const { data, error } = await supabase
       .from('knowledge_base')
       .select('*')
-      .textSearch('content', query, {
-        type: 'websearch',
-        config: 'english'
-      })
+      .or(`question.ilike.%${query}%,answer.ilike.%${query}%,content.ilike.%${query}%`)
       .limit(limit);
 
     if (error) {
-      logger.warn('Vector search not available, falling back to text search:', error);
+      logger.warn('Error with OR query, trying simpler search:', error);
       
-      // Fallback to simple text search
+      // Simpler fallback - search content field only
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('knowledge_base')
         .select('*')
@@ -45,6 +55,7 @@ export async function queryKnowledgeBase(query, limit = 5) {
 
 /**
  * Format knowledge base results for Claude context
+ * Prioritizes answer field if available, falls back to content
  */
 export function formatKnowledgeContext(results) {
   if (!results || results.length === 0) {
@@ -52,7 +63,14 @@ export function formatKnowledgeContext(results) {
   }
 
   return results
-    .map((item, index) => `[${index + 1}] ${item.content}`)
+    .map((item, index) => {
+      // Use answer if available (more detailed), otherwise use content
+      const text = item.answer || item.content || '';
+      const question = item.question ? `Q: ${item.question}\n` : '';
+      const category = item.category ? `[${item.category}]` : '';
+      
+      return `${category} ${question}A: ${text}`.trim();
+    })
     .join('\n\n');
 }
 

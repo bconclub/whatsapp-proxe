@@ -38,16 +38,16 @@ router.post('/generate-response', async (req, res, next) => {
     // Build context if not provided
     let context = providedContext;
     if (!context) {
-      // Need to get sessionId from customer
+      // Need to get phone from lead
       const { supabase } = await import('../config/supabase.js');
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('phone')
+      const { data: lead } = await supabase
+        .from('all_leads')
+        .select('phone, brand')
         .eq('id', customerId)
         .single();
       
-      if (customer) {
-        context = await buildCustomerContext(customer.phone);
+      if (lead) {
+        context = await buildCustomerContext(lead.phone, lead.brand);
       }
     }
 

@@ -28,9 +28,12 @@ npm install --production
 ### 2. Environment Configuration
 
 ```bash
-# Create .env file
-cp .env.example .env
-nano .env  # Edit with your credentials
+# Create .env.local file (or .env for production)
+cp env.template .env.local
+nano .env.local  # Edit with your credentials
+
+# Note: Server prioritizes .env.local over .env
+# For production, you may use .env or set environment variables directly
 ```
 
 Required variables:

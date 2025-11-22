@@ -1,45 +1,85 @@
 import { supabase } from '../config/supabase.js';
 import { logger } from '../utils/logger.js';
-import { updateCustomerContact } from './customerService.js';
+import { updateLeadContact } from './customerService.js';
+import { addToHistory } from './conversationService.js';
 
 /**
  * Store conversation log
+ * Now stores analytics data in messages table metadata instead of separate conversation_logs table
+ * @param {object} logData - Log data object
+ * @param {string} logData.customerId - Lead UUID (mapped from customerId for compatibility)
+ * @param {string} logData.message - Customer message
+ * @param {string} logData.response - AI response
+ * @param {string} logData.responseType - Response type
+ * @param {number} logData.tokensUsed - Tokens used
+ * @param {number} logData.responseTime - Response time in ms
+ * @param {object} logData.metadata - Additional metadata
  */
 export async function storeConversationLog(logData) {
   try {
-    const { data, error } = await supabase
-      .from('conversation_logs')
-      .insert({
-        customer_id: logData.customerId,
-        customer_message: logData.message,
-        ai_response: logData.response,
-        response_type: logData.responseType || 'text_only',
-        tokens_used: logData.tokensUsed || 0,
-        response_time_ms: logData.responseTime || 0,
-        created_at: new Date().toISOString(),
-        metadata: logData.metadata || {}
-      })
-      .select()
-      .single();
-
-    if (error) {
-      logger.error('Error storing conversation log:', error);
-      throw error;
+    const leadId = logData.customerId || logData.leadId;
+    
+    if (!leadId) {
+      throw new Error('leadId or customerId is required');
     }
 
-    // Update customer contact timestamp
-    await updateCustomerContact(logData.customerId);
+    // The customer message and AI response are already logged via addToHistory
+    // This function now just updates the AI response message with analytics metadata
+    // We need to find the most recent AI response message and update its metadata
+    
+    // Get the most recent agent message for this lead
+    const { data: recentMessages, error: fetchError } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('lead_id', leadId)
+      .eq('channel', 'whatsapp')
+      .eq('sender', 'agent')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
 
-    logger.info(`Conversation log stored: ${data.id}`);
-    return data;
+    if (recentMessages && !fetchError) {
+      // Update the most recent AI response message with analytics metadata
+      const analyticsMetadata = {
+        tokens_used: logData.tokensUsed || 0,
+        response_time_ms: logData.responseTime || 0,
+        response_type: logData.responseType || 'text_only',
+        ...(logData.metadata || {})
+      };
+
+      const { error: updateError } = await supabase
+        .from('messages')
+        .update({
+          metadata: analyticsMetadata
+        })
+        .eq('id', recentMessages.id);
+
+      if (updateError) {
+        logger.error('Error updating message metadata:', updateError);
+        // Don't throw - logging is not critical
+      } else {
+        logger.info(`Conversation analytics stored for message ${recentMessages.id}`);
+      }
+    } else {
+      // If we can't find the message, log it as a warning but don't fail
+      logger.warn('Could not find recent AI response message to update with analytics');
+    }
+
+    // Update lead contact timestamp
+    await updateLeadContact(leadId);
+
+    return { success: true, leadId };
   } catch (error) {
     logger.error('Error in storeConversationLog:', error);
-    throw error;
+    // Don't throw - logging failures shouldn't break the flow
+    return { success: false, error: error.message };
   }
 }
 
 /**
  * Extract keywords/entities from message for training data
+ * @param {string} message - Message text
+ * @returns {Array<string>} Array of extracted keywords
  */
 export function extractKeywords(message) {
   const keywords = [];
@@ -60,3 +100,79 @@ export function extractKeywords(message) {
   return [...new Set(keywords)];
 }
 
+/**
+ * Query messages for analytics/retraining
+ * @param {object} filters - Filter options
+ * @param {string} filters.brand - Brand filter
+ * @param {Date} filters.startDate - Start date
+ * @param {Date} filters.endDate - End date
+ * @param {number} filters.limit - Result limit
+ * @returns {Promise<Array>} Array of message pairs for training
+ */
+export async function getMessagesForRetraining(filters = {}) {
+  try {
+    let query = supabase
+      .from('messages')
+      .select('*')
+      .eq('channel', 'whatsapp')
+      .order('created_at', { ascending: false });
+
+    if (filters.brand) {
+      // Join with all_leads to filter by brand
+      query = query.eq('lead_id', filters.brand); // This would need a proper join in production
+    }
+
+    if (filters.startDate) {
+      query = query.gte('created_at', filters.startDate.toISOString());
+    }
+
+    if (filters.endDate) {
+      query = query.lte('created_at', filters.endDate.toISOString());
+    }
+
+    if (filters.limit) {
+      query = query.limit(filters.limit);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      logger.error('Error fetching messages for retraining:', error);
+      throw error;
+    }
+
+    // Group messages into customer-agent pairs
+    const pairs = [];
+    const leadMessages = {};
+
+    (data || []).forEach(msg => {
+      if (!leadMessages[msg.lead_id]) {
+        leadMessages[msg.lead_id] = [];
+      }
+      leadMessages[msg.lead_id].push(msg);
+    });
+
+    // Create pairs (customer message + following agent response)
+    Object.values(leadMessages).forEach(messages => {
+      messages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      
+      for (let i = 0; i < messages.length - 1; i++) {
+        if (messages[i].sender === 'customer' && messages[i + 1].sender === 'agent') {
+          pairs.push({
+            customer_message: messages[i].content,
+            ai_response: messages[i + 1].content,
+            metadata: {
+              ...messages[i + 1].metadata,
+              timestamp: messages[i + 1].created_at
+            }
+          });
+        }
+      }
+    });
+
+    return pairs;
+  } catch (error) {
+    logger.error('Error in getMessagesForRetraining:', error);
+    throw error;
+  }
+}

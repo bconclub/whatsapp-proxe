@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp PROXe Debug</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .refresh-btn { padding: 8px 12px; background: #007acc; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 18px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
+        .refresh-btn:hover { background: #005a9e; }
+        .refresh-btn:active { transform: scale(0.95); }
+        .section { margin: 20px 0; padding: 15px; background: #252526; border-radius: 5px; }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .error { color: #f48771; }
+        .success { color: #4ec9b0; }
+        .info { color: #569cd6; }
+        button { padding: 8px 12px; margin: 5px; background: #007acc; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 16px; }
+        .section-header button { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; padding: 0; }
+        button:hover { background: #005a9e; }
+        pre { background: #1e1e1e; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .status { display: inline-block; padding: 5px 10px; border-radius: 3px; margin: 5px; }
+        .status.ok { background: #4ec9b0; color: #1e1e1e; }
+        .status.error { background: #f48771; color: #1e1e1e; }
+        .refresh-icon { display: inline-block; }
+        .timer { color: #569cd6; font-size: 12px; margin-left: 10px; }
+        .auto-refresh-indicator { display: inline-block; padding: 5px 10px; background: #4ec9b0; color: #1e1e1e; border-radius: 3px; font-size: 12px; margin-left: 10px; }
+        .icon-refresh::before { content: "↻"; font-size: 20px; }
+        .icon-play::before { content: "▶"; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>WhatsApp PROXe Backend Debug</h1>
+        <button class="refresh-btn icon-refresh" onclick="refreshAll()" title="Refresh all sections"></button>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">
+            <h2>Server Status</h2>
+            <button class="icon-refresh" onclick="checkHealth()" title="Refresh Server Status"></button>
+        </div>
+        <div id="serverStatus">Checking...</div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">
+            <h2>Database Connection</h2>
+            <button class="icon-refresh" onclick="checkDatabase()" title="Refresh Database Status"></button>
+        </div>
+        <div id="dbStatus">Checking...</div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">
+            <h2>Recent Errors</h2>
+            <button class="icon-refresh" onclick="loadErrors()" title="Refresh Errors"></button>
+        </div>
+        <div id="errors">Loading...</div>
+    </div>
+    
+    <div class="section">
+        <div class="section-header">
+            <h2>Test WhatsApp Endpoint</h2>
+            <button class="icon-play" onclick="testEndpoint()" title="Test WhatsApp Endpoint"></button>
+        </div>
+        <div id="testResult"></div>
+    </div>
+
+    <script>
+        async function checkHealth() {
+            const statusDiv = document.getElementById('serverStatus');
+            statusDiv.innerHTML = '<span class="info">Checking...</span>';
+            try {
+                const res = await fetch('http://localhost:3001/health');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                statusDiv.innerHTML = 
+                    `<span class="status ok">OK</span><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            } catch (error) {
+                statusDiv.innerHTML = 
+                    `<span class="status error">ERROR</span><br>${error.message}<br><small>Make sure server is running on port 3001</small>`;
+                console.error('Health check error:', error);
+            }
+        }
+        
+        async function checkDatabase() {
+            const dbDiv = document.getElementById('dbStatus');
+            dbDiv.innerHTML = '<span class="info">Checking...</span>';
+            try {
+                const res = await fetch('http://localhost:3001/test-db');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const html = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                dbDiv.innerHTML = html;
+            } catch (error) {
+                dbDiv.innerHTML = 
+                    `<span class="status error">ERROR</span><br>${error.message}`;
+                console.error('Database check error:', error);
+            }
+        }
+        
+        async function loadErrors() {
+            const errorsDiv = document.getElementById('errors');
+            errorsDiv.innerHTML = '<span class="info">Loading...</span>';
+            try {
+                const res = await fetch('http://localhost:3001/debug/errors');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (data.recentErrors && data.recentErrors.length > 0) {
+                    const html = `<pre>${JSON.stringify(data.recentErrors, null, 2)}</pre>`;
+                    errorsDiv.innerHTML = html;
+                } else {
+                    errorsDiv.innerHTML = 
+                        '<span class="info">No recent errors</span>';
+                }
+            } catch (error) {
+                errorsDiv.innerHTML = 
+                    `<span class="status error">ERROR</span><br>${error.message}`;
+                console.error('Load errors error:', error);
+            }
+        }
+        
+        async function testEndpoint() {
+            const resultDiv = document.getElementById('testResult');
+            resultDiv.innerHTML = '<span class="info">Testing...</span>';
+            console.log('Test endpoint clicked');
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/whatsapp/message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sessionId: "9876543222",
+                        message: "What is PROXe",
+                        profileName: "Whats Raj",
+                        timestamp: ""
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response ok:', response.ok);
+                
+                let data;
+                const responseText = await response.text();
+                console.log('Response text:', responseText);
+                
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('JSON parse error:', parseError);
+                    data = { error: 'Invalid JSON response', rawResponse: responseText };
+                }
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `<span class="success">SUCCESS (${response.status})</span><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">ERROR (${response.status})</span><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                }
+                
+                // Reload errors after test
+                setTimeout(loadErrors, 500);
+            } catch (error) {
+                console.error('Test endpoint error:', error);
+                resultDiv.innerHTML = `<span class="error">REQUEST FAILED</span><pre>${error.message}\n\nStack: ${error.stack}</pre>`;
+            }
+        }
+        
+        // Refresh all function
+        function refreshAll() {
+            console.log('Refreshing all sections...');
+            checkHealth();
+            checkDatabase();
+            loadErrors();
+        }
+        
+        // Load on page load
+        refreshAll();
+        
+        // Show page loaded message
+        console.log('Debug page loaded. Click "Refresh All" or individual refresh buttons to update.');
+        
+        // Test if testEndpoint function is available
+        console.log('testEndpoint function:', typeof testEndpoint);
+        
+        // Add click event listener as backup
+        document.addEventListener('DOMContentLoaded', function() {
+            const playButton = document.querySelector('.icon-play');
+            if (playButton) {
+                playButton.addEventListener('click', function(e) {
+                    console.log('Play button clicked via event listener');
+                    testEndpoint();
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+

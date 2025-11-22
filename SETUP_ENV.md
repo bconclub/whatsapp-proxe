@@ -2,16 +2,17 @@
 
 ## Quick Setup
 
-1. **Copy the template:**
+1. **Copy the template to `.env.local`:**
    ```bash
-   copy env.template .env
+   # Linux/Mac
+   cp env.template .env.local
    ```
    Or on PowerShell:
    ```powershell
-   Copy-Item env.template .env
+   Copy-Item env.template .env.local
    ```
 
-2. **Edit `.env` file** and add your actual API keys:
+2. **Edit `.env.local` file** and add your actual API keys:
 
 ## Required API Keys
 
@@ -20,7 +21,7 @@
 2. Sign in or create an account
 3. Navigate to API Keys section
 4. Create a new API key
-5. Copy the key and paste it in `.env`:
+5. Copy the key and paste it in `.env.local`:
    ```
    CLAUDE_API_KEY=sk-ant-api03-xxxxxxxxxxxxx
    ```
@@ -34,14 +35,14 @@
    - **anon public** key → `SUPABASE_KEY`
    - **service_role** key → `SUPABASE_SERVICE_KEY`
 
-   Update in `.env`:
+   Update in `.env.local`:
    ```
    SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
    SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
    SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
    ```
 
-## Example .env File
+## Example .env.local File
 
 ```env
 # Server Configuration
@@ -84,10 +85,10 @@ The server should start without errors. If you see connection errors, verify:
 
 ## Security Notes
 
-⚠️ **Never commit `.env` to git!** It's already in `.gitignore`.
+⚠️ **Never commit `.env.local` to git!** It's already in `.gitignore`.
 
 - Keep your API keys secret
-- Don't share `.env` file
+- Don't share `.env.local` file
 - Rotate keys if exposed
 - Use different keys for development and production
 

@@ -37,9 +37,12 @@ n8n Webhook → Backend Service → Supabase → Claude API → JSON Response �
 
 2. **Set up environment variables:**
    ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
+   # Use .env.local as primary configuration file
+   cp env.template .env.local
+   # Edit .env.local with your actual credentials
    ```
+   
+   **Note:** The server prioritizes `.env.local` over `.env`. Create `.env.local` for your local development.
 
 3. **Set up Supabase database:**
    - Go to your Supabase project SQL Editor

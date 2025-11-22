@@ -1,8 +1,8 @@
 import express from 'express';
 import { z } from 'zod';
-import { getOrCreateCustomer } from '../services/customerService.js';
-import { buildCustomerContext } from '../services/customerService.js';
+import { getOrCreateLead, buildCustomerContext } from '../services/customerService.js';
 import { getConversationHistory, addToHistory } from '../services/conversationService.js';
+import { getOrCreateWhatsAppSession, linkSessionToLead, incrementSessionMessageCount } from '../services/whatsappSessionService.js';
 import { generateResponse } from '../services/claudeService.js';
 import { formatWhatsAppResponse } from '../services/responseFormatter.js';
 import { storeConversationLog } from '../services/loggingService.js';
@@ -16,61 +16,177 @@ const messageSchema = z.object({
   sessionId: z.string().min(10).max(15),
   message: z.string().min(1).max(4000),
   profileName: z.string().optional(),
-  timestamp: z.string().optional()
+  timestamp: z.string().optional(),
+  brand: z.enum(['proxe', 'windchasers']).optional().default('proxe')
 });
 
 /**
  * POST /api/whatsapp/message
  * Primary message handler - receives messages from n8n
+ * Now uses new schema: all_leads, whatsapp_sessions, messages
  */
 router.post('/message', async (req, res, next) => {
+  // Wrap everything in try-catch to ensure errors are caught
   try {
     const startTime = Date.now();
+    
+    // Ensure response object is available
+    if (!res || typeof res.status !== 'function') {
+      throw new Error('Invalid response object');
+    }
 
     // Validate input
     const validation = messageSchema.safeParse(req.body);
     if (!validation.success) {
-      throw new AppError('Invalid request data', 400);
+      logger.error('Validation failed:', validation.error);
+      return res.status(400).json({ 
+        error: 'Invalid request data', 
+        details: validation.error.errors 
+      });
     }
 
-    const { sessionId, message, profileName, timestamp } = validation.data;
+    const { sessionId, message, profileName, timestamp, brand } = validation.data;
 
-    logger.info(`Processing message from ${sessionId}`);
+    logger.info(`Processing WhatsApp message from ${sessionId} (brand: ${brand})`);
 
-    // Get or create customer
-    const customer = await getOrCreateCustomer(sessionId, profileName);
+    // Step 1: Get or create lead in all_leads
+    let lead;
+    try {
+      lead = await getOrCreateLead(sessionId, brand, { profileName });
+      logger.info(`Lead retrieved/created: ${lead.id}`);
+    } catch (error) {
+      console.error('=== ERROR in getOrCreateLead ===');
+      console.error('Error:', error);
+      console.error('Message:', error.message);
+      console.error('Stack:', error.stack);
+      logger.error('Error in getOrCreateLead:', error);
+      return res.status(500).json({ 
+        error: 'Failed to get or create lead', 
+        details: error.message,
+        step: 'getOrCreateLead',
+        code: error.code || null
+      });
+    }
 
-    // Build customer context
-    const context = await buildCustomerContext(sessionId);
+    // Step 2: Get or create WhatsApp session
+    let whatsappSession;
+    try {
+      whatsappSession = await getOrCreateWhatsAppSession(sessionId, brand, {
+        profileName,
+        whatsappNumber: sessionId
+      });
+      logger.info(`WhatsApp session retrieved/created: ${whatsappSession.id}`);
+    } catch (error) {
+      console.error('=== ERROR in getOrCreateWhatsAppSession ===');
+      console.error('Error:', error);
+      console.error('Message:', error.message);
+      console.error('Stack:', error.stack);
+      logger.error('Error in getOrCreateWhatsAppSession:', error);
+      return res.status(500).json({ 
+        error: 'Failed to get or create WhatsApp session', 
+        details: error.message,
+        step: 'getOrCreateWhatsAppSession',
+        code: error.code || null
+      });
+    }
 
-    // Get conversation history
-    const conversationHistory = await getConversationHistory(customer.id, 10);
+    // Step 3: Link session to lead if not already linked
+    try {
+      if (!whatsappSession.lead_id && lead.id) {
+        await linkSessionToLead(whatsappSession.id, lead.id);
+        whatsappSession.lead_id = lead.id;
+      }
+    } catch (error) {
+      console.error('=== ERROR in linkSessionToLead ===', error);
+      logger.error('Error linking session to lead:', error);
+      // Continue - not critical
+    }
 
-    // Add user message to history
-    await addToHistory(customer.id, message, 'user', 'text');
+    // Step 4: Build customer context (uses all_leads, whatsapp_sessions, messages)
+    let context;
+    try {
+      context = await buildCustomerContext(sessionId, brand);
+      logger.info('Customer context built successfully');
+    } catch (error) {
+      console.error('=== ERROR in buildCustomerContext ===', error);
+      logger.error('Error building customer context:', error);
+      return res.status(500).json({ 
+        error: 'Failed to build customer context', 
+        details: error.message,
+        step: 'buildCustomerContext',
+        code: error.code || null
+      });
+    }
 
-    // Generate AI response
-    const aiResponse = await generateResponse(context, message, conversationHistory);
+    // Step 5: Get conversation history from messages table
+    let conversationHistory;
+    try {
+      conversationHistory = await getConversationHistory(lead.id, 10);
+      logger.info(`Retrieved ${conversationHistory.length} messages from history`);
+    } catch (error) {
+      console.error('=== ERROR in getConversationHistory ===', error);
+      logger.error('Error getting conversation history:', error);
+      conversationHistory = []; // Continue with empty history
+    }
 
-    // Add assistant response to history
-    await addToHistory(customer.id, aiResponse.rawResponse, 'assistant', 'text');
+    // Step 6: Add user message to messages table
+    try {
+      await addToHistory(lead.id, message, 'user', 'text');
+    } catch (error) {
+      console.error('=== ERROR in addToHistory (user) ===', error);
+      logger.error('Error adding user message to history:', error);
+      // Continue - logging is not critical
+    }
 
-    // Format response for WhatsApp
+    // Step 7: Increment session message count
+    try {
+      await incrementSessionMessageCount(whatsappSession.id);
+    } catch (error) {
+      console.error('=== ERROR in incrementSessionMessageCount ===', error);
+      logger.error('Error incrementing message count:', error);
+      // Continue - not critical
+    }
+
+    // Step 8: Generate AI response
+    let aiResponse;
+    try {
+      aiResponse = await generateResponse(context, message, conversationHistory);
+      logger.info('AI response generated successfully');
+    } catch (error) {
+      console.error('=== ERROR in generateResponse ===', error);
+      logger.error('Error generating AI response:', error);
+      return res.status(500).json({ 
+        error: 'Failed to generate AI response', 
+        details: error.message,
+        step: 'generateResponse',
+        code: error.code || null
+      });
+    }
+
+    // Step 9: Add assistant response to messages table
+    await addToHistory(lead.id, aiResponse.rawResponse, 'assistant', 'text');
+
+    // Step 10: Increment session message count again
+    await incrementSessionMessageCount(whatsappSession.id);
+
+    // Step 11: Format response for WhatsApp
     const formattedResponse = formatWhatsAppResponse(
       aiResponse.rawResponse,
       aiResponse.responseType,
       aiResponse.buttons,
       {
-        customerId: customer.id,
+        leadId: lead.id,
+        sessionId: whatsappSession.id,
         conversationId: `conv_${Date.now()}`,
         responseTime: Date.now() - startTime,
         tokensUsed: aiResponse.tokensUsed
       }
     );
 
-    // Store conversation log
+    // Step 12: Store conversation log (analytics in messages metadata)
     await storeConversationLog({
-      customerId: customer.id,
+      customerId: lead.id, // For backward compatibility
+      leadId: lead.id,
       message,
       response: aiResponse.rawResponse,
       responseType: aiResponse.responseType,
@@ -79,7 +195,8 @@ router.post('/message', async (req, res, next) => {
       metadata: {
         buttons: aiResponse.buttons,
         urgency: aiResponse.urgency,
-        nextAction: aiResponse.nextAction
+        nextAction: aiResponse.nextAction,
+        brand: brand
       }
     });
 
@@ -101,14 +218,62 @@ router.post('/message', async (req, res, next) => {
       }),
       whatsappPayload: formattedResponse,
       metadata: {
-        customerId: customer.id,
+        leadId: lead.id,
+        sessionId: whatsappSession.id,
         conversationId: `conv_${Date.now()}`,
         responseTime: Date.now() - startTime,
-        tokensUsed: aiResponse.tokensUsed
+        tokensUsed: aiResponse.tokensUsed,
+        brand: brand
       }
     });
   } catch (error) {
+    // Log full error details
+    console.error('=== WHATSAPP ENDPOINT ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error name:', error.name);
+    console.error('Error stack:', error.stack);
+    console.error('Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    
+    logger.error('Error in WhatsApp message handler:', {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      details: error.details
+    });
+    
+    // Always try to send error response
+    try {
+      if (res && !res.headersSent) {
+        const errorResponse = {
+          error: error.message || 'Internal server error',
+          statusCode: error.statusCode || 500,
+          errorName: error.name,
+          path: req.path,
+          method: req.method,
+          ...(process.env.NODE_ENV !== 'production' && { 
+            stack: error.stack,
+            details: error.details || null,
+            code: error.code || null,
+            fullError: error.toString()
+          })
+        };
+        
+        console.error('Sending error response:', JSON.stringify(errorResponse, null, 2));
+        return res.status(error.statusCode || 500).json(errorResponse);
+      } else if (res && res.headersSent) {
+        console.error('Response already sent, cannot send error response');
+      } else {
+        console.error('Response object not available');
+      }
+    } catch (sendError) {
+      console.error('Error sending error response:', sendError);
+    }
+    
+    // Pass to error handler as fallback
+    if (next) {
     next(error);
+    }
   }
 });
 
@@ -135,4 +300,3 @@ function determineAction(buttonId, label) {
 }
 
 export default router;
-

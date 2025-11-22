@@ -1,10 +1,40 @@
+// Load environment variables FIRST before any other imports
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env files from project root (one level up from src/)
+// Priority: .env.local (primary) -> .env (fallback)
+const envLocalPath = path.join(__dirname, '..', '.env.local');
+const envPath = path.join(__dirname, '..', '.env');
+
+// Load .env.local first (primary configuration)
+const envLocalResult = dotenv.config({ path: envLocalPath });
+
+// Load .env as fallback (only if .env.local doesn't exist or for missing vars)
+if (envLocalResult.error) {
+  const envResult = dotenv.config({ path: envPath });
+  if (envResult.error) {
+    console.warn('Warning: Neither .env.local nor .env found. Using environment variables only.');
+  } else {
+    console.log('Loaded .env file (fallback - .env.local not found)');
+  }
+} else {
+  console.log('Loaded .env.local file (primary configuration)');
+  // Still load .env for any missing variables (but .env.local takes precedence)
+  dotenv.config({ path: envPath, override: false });
+}
+
+// Now import other modules that depend on environment variables
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 import { logger } from './utils/logger.js';
-import { errorHandler } from './middleware/errorHandler.js';
+import { errorHandler, getRecentErrors } from './middleware/errorHandler.js';
 
 // Routes
 import whatsappRoutes from './routes/whatsapp.js';
@@ -18,17 +48,28 @@ import knowledgeBaseRoutes from './routes/knowledgeBase.js';
 import scheduleRoutes from './routes/schedule.js';
 import retrainRoutes from './routes/retrain.js';
 
-dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Security middleware
-app.use(helmet());
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
-  credentials: true
+// Security middleware - disable CSP for debug page
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"], // Allow inline scripts for debug page
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
 }));
+app.use(cors({
+  origin: '*', // Allow all origins for debugging
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Serve static files (for debug page)
+app.use(express.static('public'));
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -54,6 +95,233 @@ app.use((req, res, next) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Debug endpoint to see recent errors
+app.get('/debug/errors', (req, res) => {
+  const errors = getRecentErrors();
+  res.json({
+    recentErrors: errors.slice(-10), // Last 10 errors
+    count: errors.length
+  });
+});
+
+// Test Claude API key
+app.get('/debug/test-claude', async (req, res) => {
+  try {
+    const { claudeClient, CLAUDE_MODEL } = await import('./config/claude.js');
+    
+    // Make a simple test call
+    const response = await claudeClient.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 10,
+      messages: [{
+        role: 'user',
+        content: 'Say "test"'
+      }]
+    });
+    
+    res.json({
+      status: 'success',
+      message: 'Claude API key is valid',
+      response: response.content[0].text,
+      model: CLAUDE_MODEL
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+      details: error.toString(),
+      apiKeySet: !!process.env.CLAUDE_API_KEY,
+      apiKeyPreview: process.env.CLAUDE_API_KEY ? process.env.CLAUDE_API_KEY.substring(0, 15) + '...' : 'NOT SET'
+    });
+  }
+});
+
+// Test endpoint that tries to create a lead and session to see what fails
+app.post('/debug/test-whatsapp-flow', async (req, res) => {
+  try {
+    const { getOrCreateLead } = await import('./services/customerService.js');
+    const { getOrCreateWhatsAppSession } = await import('./services/whatsappSessionService.js');
+    
+    const sessionId = req.body.sessionId || "9876543210";
+    const brand = req.body.brand || "proxe";
+    const profileName = req.body.profileName || "Test User";
+    
+    const results = {
+      step1_lead: null,
+      step2_session: null,
+      errors: []
+    };
+    
+    // Test Step 1: Create lead
+    try {
+      results.step1_lead = await getOrCreateLead(sessionId, brand, { profileName });
+      results.step1_lead.success = true;
+    } catch (error) {
+      results.step1_lead = {
+        success: false,
+        error: error.message,
+        code: error.code,
+        stack: error.stack
+      };
+      results.errors.push({ step: 'getOrCreateLead', error: error.message });
+    }
+    
+    // Test Step 2: Create session
+    try {
+      results.step2_session = await getOrCreateWhatsAppSession(sessionId, brand, { profileName });
+      results.step2_session.success = true;
+    } catch (error) {
+      results.step2_session = {
+        success: false,
+        error: error.message,
+        code: error.code,
+        stack: error.stack
+      };
+      results.errors.push({ step: 'getOrCreateWhatsAppSession', error: error.message });
+    }
+    
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Simple test endpoint that shows what happens when we call the WhatsApp endpoint
+app.get('/debug/test-whatsapp', async (req, res) => {
+  try {
+    const testBody = {
+      sessionId: "9876543210",
+      message: "What commercial spaces do you have in Mumbai?",
+      profileName: "Rajesh Kumar",
+      timestamp: "1748299381"
+    };
+    
+    // Simulate the request internally
+    const { default: whatsappRouter } = await import('./routes/whatsapp.js');
+    
+    // Create a mock request/response
+    const mockReq = {
+      body: testBody,
+      method: 'POST',
+      path: '/api/whatsapp/message'
+    };
+    
+    const mockRes = {
+      statusCode: 200,
+      headers: {},
+      jsonData: null,
+      status: function(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json: function(data) {
+        this.jsonData = data;
+        return this;
+      },
+      headersSent: false
+    };
+    
+    res.json({
+      message: 'Test endpoint - check /debug/errors for actual errors',
+      testBody: testBody,
+      note: 'Use POST /api/whatsapp/message directly to test'
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Clear errors endpoint
+app.post('/debug/clear-errors', (req, res) => {
+  // This would need to be implemented in errorHandler
+  res.json({ message: 'Use error handler clear function' });
+});
+
+// Database test endpoint
+app.get('/test-db', async (req, res) => {
+  try {
+    // Check environment variables (prioritize NEXT_PUBLIC_* vars from .env.local)
+    const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+    
+    const envCheck = {
+      SUPABASE_URL: supabaseUrl ? (supabaseUrl.substring(0, 30) + '...') : 'MISSING',
+      SUPABASE_KEY: supabaseKey ? (supabaseKey.substring(0, 30) + '...') : 'MISSING',
+      SUPABASE_SERVICE_KEY: serviceKey ? 'SET' : 'MISSING',
+      CLAUDE_API_KEY: process.env.CLAUDE_API_KEY ? 'SET' : 'MISSING',
+      usingNextPublicVars: !!(process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL && !process.env.SUPABASE_URL)
+    };
+    
+    if (!supabaseUrl || !supabaseKey) {
+      return res.status(500).json({
+        error: 'Missing Supabase configuration',
+        env: envCheck
+      });
+    }
+    
+    const { supabase } = await import('./config/supabase.js');
+    
+    // Test all_leads table
+    let leadsResult = { ok: false, error: null };
+    try {
+      const { data: leads, error: leadsError } = await supabase
+        .from('all_leads')
+        .select('count')
+        .limit(1);
+      leadsResult = leadsError ? { ok: false, error: leadsError.message, code: leadsError.code } : { ok: true };
+    } catch (err) {
+      leadsResult = { ok: false, error: err.message, type: err.constructor.name };
+    }
+    
+    // Test whatsapp_sessions table
+    let sessionsResult = { ok: false, error: null };
+    try {
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('whatsapp_sessions')
+        .select('count')
+        .limit(1);
+      sessionsResult = sessionsError ? { ok: false, error: sessionsError.message, code: sessionsError.code } : { ok: true };
+    } catch (err) {
+      sessionsResult = { ok: false, error: err.message, type: err.constructor.name };
+    }
+    
+    // Test messages table
+    let messagesResult = { ok: false, error: null };
+    try {
+      const { data: messages, error: messagesError } = await supabase
+        .from('messages')
+        .select('count')
+        .limit(1);
+      messagesResult = messagesError ? { ok: false, error: messagesError.message, code: messagesError.code } : { ok: true };
+    } catch (err) {
+      messagesResult = { ok: false, error: err.message, type: err.constructor.name };
+    }
+    
+    res.json({
+      status: 'ok',
+      env: envCheck,
+      tables: {
+        all_leads: leadsResult,
+        whatsapp_sessions: sessionsResult,
+        messages: messagesResult
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+  }
 });
 
 // API Routes

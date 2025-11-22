@@ -77,19 +77,19 @@ async function handleViewProperty(customerId, propertyId) {
   // TODO: Fetch actual property data from database
   // For now, generate a response using Claude
   
-  // Get customer to find sessionId
+  // Get lead to find phone number
   const { supabase } = await import('../config/supabase.js');
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('phone')
+  const { data: lead } = await supabase
+    .from('all_leads')
+    .select('phone, brand')
     .eq('id', customerId)
     .single();
   
-  if (!customer) {
-    throw new Error('Customer not found');
+  if (!lead) {
+    throw new Error('Lead not found');
   }
   
-  const context = await buildCustomerContext(customer.phone);
+  const context = await buildCustomerContext(lead.phone, lead.brand);
   const history = await getConversationHistory(customerId);
   
   const response = await generateResponse(
