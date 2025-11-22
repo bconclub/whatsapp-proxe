@@ -29,17 +29,28 @@ jobs:
             echo "Current user: $(whoami)"
             echo "Current directory: $(pwd)"
             
-            # Create directory if it doesn't exist
-            mkdir -p /var/www/whatsapp-proxe
-            cd /var/www/whatsapp-proxe
+            # Create parent directory if it doesn't exist
+            mkdir -p /var/www
             
             # Git operations
-            if [ -d ".git" ]; then
+            if [ -d "/var/www/whatsapp-proxe/.git" ]; then
               echo "📥 Pulling latest changes..."
-              git pull origin main
+              cd /var/www/whatsapp-proxe
+              git pull origin main || {
+                echo "⚠️  Git pull failed, trying to reset..."
+                git fetch origin
+                git reset --hard origin/main
+              }
             else
+              # If directory exists but isn't a git repo, remove it
+              if [ -d "/var/www/whatsapp-proxe" ]; then
+                echo "⚠️  Directory exists but is not a git repository"
+                echo "🗑️  Removing existing directory..."
+                rm -rf /var/www/whatsapp-proxe
+              fi
               echo "📥 Cloning repository..."
-              git clone https://github.com/bconclub/whatsapp-proxe.git .
+              git clone https://github.com/bconclub/whatsapp-proxe.git /var/www/whatsapp-proxe
+              cd /var/www/whatsapp-proxe
             fi
             
             # Install dependencies
