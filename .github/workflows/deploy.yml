@@ -80,7 +80,7 @@ jobs:
           script: |
             echo "⏳ Waiting for app to be ready..."
             sleep 10
-            echo "🏥 Checking health endpoint..."
+            echo "🏥 Checking health endpoint on port 3001..."
             # Wait for PM2 process to be online
             for i in {1..30}; do
               if pm2 describe whatsapp-proxe | grep -q "online"; then
@@ -90,7 +90,7 @@ jobs:
               echo "Waiting for PM2 process... ($i/30)"
               sleep 2
             done
-            # Check health endpoint
+            # Check health endpoint on correct port
             curl -f http://localhost:3001/health || {
               echo "❌ Health check failed"
               pm2 logs whatsapp-proxe --lines 20 --nostream
