@@ -3,15 +3,22 @@ import { logger } from '../utils/logger.js';
 
 // Lazy initialization - only check when actually creating client
 function getSupabaseClient() {
-  // Support both naming conventions: prioritize NEXT_PUBLIC_* vars (from .env.local) over SUPABASE_* vars (from .env)
-  const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+  // Support multiple naming conventions (in order of priority):
+  // 1. NEXT_PUBLIC_PROXE_SUPABASE_URL (project-specific)
+  // 2. NEXT_PUBLIC_SUPABASE_URL (generic Next.js pattern)
+  // 3. SUPABASE_URL (standard)
+  const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || 
+                      process.env.NEXT_PUBLIC_SUPABASE_URL || 
+                      process.env.SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || 
+                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                      process.env.SUPABASE_KEY;
   
   // Validate that we have real values, not placeholders
   if (!supabaseUrl || !supabaseKey || 
       supabaseUrl.includes('your-project') || 
       supabaseKey.includes('your-supabase')) {
-    throw new Error('Missing or invalid Supabase configuration. Please set NEXT_PUBLIC_PROXE_SUPABASE_URL and NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY (or SUPABASE_URL and SUPABASE_KEY) environment variables with real values.');
+    throw new Error('Missing or invalid Supabase configuration. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL and SUPABASE_KEY) environment variables with real values.');
   }
   
   return createClient(supabaseUrl, supabaseKey);
@@ -37,7 +44,9 @@ export const supabaseAdmin = new Proxy({}, {
       if (!serviceKey) {
         return null;
       }
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL;
+      const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || 
+                          process.env.NEXT_PUBLIC_SUPABASE_URL || 
+                          process.env.SUPABASE_URL;
       if (!supabaseUrl) {
         throw new Error('Missing SUPABASE_URL for service role client');
       }
@@ -49,8 +58,12 @@ export const supabaseAdmin = new Proxy({}, {
 
 // Test connection (using all_leads table from unified schema) - only after dotenv loads
 setTimeout(() => {
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_KEY || process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || 
+                      process.env.NEXT_PUBLIC_SUPABASE_URL || 
+                      process.env.SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || 
+                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                      process.env.SUPABASE_KEY;
   
   if (_supabase || (supabaseUrl && supabaseKey)) {
     supabase.from('all_leads').select('count').limit(1)

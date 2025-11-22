@@ -247,23 +247,38 @@ app.get('/debug/test-whatsapp', async (req, res) => {
 // Clear errors endpoint
 // Status endpoints
 app.get('/status/env', (req, res) => {
-  // Check for environment variables, supporting both naming conventions
-  const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+  // Check for environment variables, supporting multiple naming conventions
+  const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || 
+                      process.env.NEXT_PUBLIC_SUPABASE_URL || 
+                      process.env.SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || 
+                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                      process.env.SUPABASE_KEY;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  // Determine which variable name is being used
+  let supabaseUrlSource = null;
+  if (process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL) supabaseUrlSource = 'NEXT_PUBLIC_PROXE_SUPABASE_URL';
+  else if (process.env.NEXT_PUBLIC_SUPABASE_URL) supabaseUrlSource = 'NEXT_PUBLIC_SUPABASE_URL';
+  else if (process.env.SUPABASE_URL) supabaseUrlSource = 'SUPABASE_URL';
+  
+  let supabaseKeySource = null;
+  if (process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY) supabaseKeySource = 'NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY';
+  else if (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) supabaseKeySource = 'NEXT_PUBLIC_SUPABASE_ANON_KEY';
+  else if (process.env.SUPABASE_KEY) supabaseKeySource = 'SUPABASE_KEY';
   
   const keys = [
     {
       name: 'SUPABASE_URL',
       set: !!supabaseUrl,
       preview: supabaseUrl ? `${supabaseUrl.substring(0, 10)}...` : null,
-      source: process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL ? 'NEXT_PUBLIC_PROXE_SUPABASE_URL' : (process.env.SUPABASE_URL ? 'SUPABASE_URL' : null)
+      source: supabaseUrlSource
     },
     {
       name: 'SUPABASE_KEY',
       set: !!supabaseKey,
       preview: supabaseKey ? `${supabaseKey.substring(0, 10)}...` : null,
-      source: process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY ? 'NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY' : (process.env.SUPABASE_KEY ? 'SUPABASE_KEY' : null)
+      source: supabaseKeySource
     },
     {
       name: 'SUPABASE_SERVICE_KEY',
@@ -329,9 +344,13 @@ app.get('/status/api', async (req, res) => {
   // Check Supabase API
   try {
     const { supabase } = await import('./config/supabase.js');
-    // Check for both naming conventions
-    const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || process.env.SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+    // Check for multiple naming conventions
+    const supabaseUrl = process.env.NEXT_PUBLIC_PROXE_SUPABASE_URL || 
+                        process.env.NEXT_PUBLIC_SUPABASE_URL || 
+                        process.env.SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_PROXE_SUPABASE_ANON_KEY || 
+                        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+                        process.env.SUPABASE_KEY;
     if (supabase && supabaseUrl && supabaseKey) {
       apis.Supabase = { valid: true };
     } else {
