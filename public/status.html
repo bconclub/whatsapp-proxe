@@ -53,7 +53,10 @@
             transition: opacity 0.2s;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+        }
+        .btn i {
+            font-size: 14px;
         }
         .btn:hover {
             opacity: 0.8;
@@ -96,18 +99,19 @@
             letter-spacing: 0.5px;
         }
         .status-badge.ok {
-            background: #000000;
+            background: #10b981;
             color: #ffffff;
+            border-color: #10b981;
         }
         .status-badge.error {
-            background: #ffffff;
-            color: #000000;
-            border-color: #000000;
+            background: #ef4444;
+            color: #ffffff;
+            border-color: #ef4444;
         }
         .status-badge.warning {
-            background: #ffffff;
-            color: #000000;
-            border-color: #666666;
+            background: #f59e0b;
+            color: #ffffff;
+            border-color: #f59e0b;
         }
         .key-item {
             display: flex;
@@ -144,7 +148,6 @@
         }
         .loading {
             color: #666666;
-            font-style: italic;
             font-size: 14px;
         }
         .metric {
@@ -179,7 +182,6 @@
         .empty-state {
             color: #999999;
             font-size: 13px;
-            font-style: italic;
         }
     </style>
 </head>
@@ -194,7 +196,7 @@
             <div class="header-actions">
                 <button class="btn" onclick="refreshAll()">
                     <i class="fas fa-sync-alt"></i>
-                    Refresh
+                    <span>Refresh</span>
                 </button>
             </div>
         </div>
@@ -311,12 +313,20 @@
                 if (Object.keys(apis).length === 0) {
                     div.innerHTML = '<div class="empty-state">No API checks available</div>';
                 } else {
-                    const html = Object.entries(apis).map(([name, status]) => `
+                    const html = Object.entries(apis).map(([name, status]) => {
+                        let badgeClass = 'error';
+                        if (status.valid) {
+                            badgeClass = 'ok';
+                        } else if (status.warning) {
+                            badgeClass = 'warning';
+                        }
+                        return `
                         <div class="metric">
                             <span class="metric-label">${name}</span>
-                            <span class="status-badge ${status.valid ? 'ok' : 'error'}">${status.valid ? 'Valid' : 'Invalid'}</span>
+                            <span class="status-badge ${badgeClass}">${status.valid ? 'Valid' : status.warning ? 'Warning' : 'Invalid'}</span>
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
                     div.innerHTML = html;
                 }
             }
