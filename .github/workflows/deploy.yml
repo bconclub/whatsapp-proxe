@@ -59,3 +59,15 @@ jobs:
             
             echo "✅ Deployment complete!"
             pm2 status
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            sleep 5
+            curl -f http://localhost:3000/health || exit 1
+

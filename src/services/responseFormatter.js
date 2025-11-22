@@ -138,3 +138,5 @@ export function formatTemplateResponse(templateName, languageCode = 'en', parame
   };
 }
 
+
+

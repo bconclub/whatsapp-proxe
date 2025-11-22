@@ -100,6 +100,7 @@ export function extractKeywords(message) {
   return [...new Set(keywords)];
 }
 
+<<<<<<< Updated upstream
 /**
  * Query messages for analytics/retraining
  * @param {object} filters - Filter options
@@ -176,3 +177,4 @@ export async function getMessagesForRetraining(filters = {}) {
     throw error;
   }
 }
+

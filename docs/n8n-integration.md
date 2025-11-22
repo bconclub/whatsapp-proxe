@@ -244,3 +244,5 @@ Monitor backend health in n8n:
 - Verify Supabase query performance
 - Consider caching customer context
 
+
+

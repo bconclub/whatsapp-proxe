@@ -289,3 +289,4 @@ function generateSummary(messages) {
 
   return summary.length > 500 ? summary.substring(0, 500) + '...' : summary;
 }
+

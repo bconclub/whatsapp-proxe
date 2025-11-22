@@ -56,3 +56,5 @@ router.get('/slots', async (req, res, next) => {
 
 export default router;
 
+
+
