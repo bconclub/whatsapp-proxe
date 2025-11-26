@@ -168,15 +168,108 @@ export async function updateCustomerContact(customerId) {
 }
 
 /**
+ * Get full customer context from all_leads table
+ * Fetches unified_context including web conversations, bookings, and user inputs
+ * @param {string} phone - Phone number (original format)
+ * @param {string} brand - Brand name ('proxe' or 'windchasers')
+ * @returns {Promise<object>} Enriched context object with web conversations, booking info, and user inputs
+ */
+export async function getCustomerFullContext(phone, brand = 'proxe') {
+  try {
+    const normalizedPhone = normalizePhoneNumber(phone);
+    
+    // Fetch lead from all_leads table
+    const { data: lead, error } = await supabase
+      .from('all_leads')
+      .select('*')
+      .eq('customer_phone_normalized', normalizedPhone)
+      .eq('brand', brand)
+      .single();
+
+    if (error) {
+      // If lead doesn't exist, return empty context
+      if (error.code === 'PGRST116') {
+        logger.info(`No lead found for phone ${phone} (brand: ${brand})`);
+        return {
+          conversationSummary: null,
+          booking: null,
+          userInputs: [],
+          webConversations: null
+        };
+      }
+      logger.error('Error fetching lead for full context:', error);
+      throw error;
+    }
+
+    if (!lead) {
+      return {
+        conversationSummary: null,
+        booking: null,
+        userInputs: [],
+        webConversations: null
+      };
+    }
+
+    const unifiedContext = lead.unified_context || {};
+    const webContext = unifiedContext.web || {};
+    
+    // Extract web conversation summary
+    const conversationSummary = webContext.conversation_summary 
+      || webContext.summary 
+      || webContext.last_conversation_summary 
+      || null;
+
+    // Extract booking information
+    const booking = {
+      booking_date: unifiedContext.booking_date || webContext.booking_date || null,
+      booking_time: unifiedContext.booking_time || webContext.booking_time || null,
+      booking_status: unifiedContext.booking_status || webContext.booking_status || null,
+      exists: !!(unifiedContext.booking_date || webContext.booking_date || 
+                unifiedContext.booking_time || webContext.booking_time)
+    };
+
+    // Extract user inputs from web conversations
+    const userInputs = webContext.user_inputs 
+      || webContext.inputs 
+      || webContext.past_interests 
+      || webContext.interests 
+      || [];
+    
+    // Extract full web conversations if available
+    const webConversations = webContext.conversations 
+      || webContext.messages 
+      || webContext.chat_history 
+      || null;
+
+    logger.info(`Retrieved full context for phone ${phone}: booking exists=${booking.exists}, user inputs=${userInputs.length}`);
+
+    return {
+      conversationSummary,
+      booking: booking.exists ? booking : null,
+      userInputs: Array.isArray(userInputs) ? userInputs : [],
+      webConversations
+    };
+  } catch (error) {
+    logger.error('Error in getCustomerFullContext:', error);
+    throw error;
+  }
+}
+
+/**
  * Build full customer context for AI
+ * Enhanced flow: Gets customer, checks all_leads, fetches unified_context,
+ * checks for bookings, and builds enriched context
  * Uses all_leads, whatsapp_sessions, and messages tables
  */
 export async function buildCustomerContext(sessionId, brand = 'proxe') {
   try {
-    // Get or create lead
+    // Step 1: Get or create lead
     const lead = await getOrCreateLead(sessionId, brand);
     
-    // Get WhatsApp session
+    // Step 2: Get full context from all_leads (unified_context with web conversations, bookings)
+    const fullContext = await getCustomerFullContext(sessionId, brand);
+    
+    // Step 3: Get WhatsApp session
     const { data: session } = await supabase
       .from('whatsapp_sessions')
       .select('*')
@@ -184,7 +277,7 @@ export async function buildCustomerContext(sessionId, brand = 'proxe') {
       .eq('brand', brand)
       .single();
     
-    // Fetch conversation history from messages table
+    // Step 4: Fetch conversation history from messages table (WhatsApp channel)
     const { data: messages } = await supabase
       .from('messages')
       .select('*')
@@ -193,11 +286,28 @@ export async function buildCustomerContext(sessionId, brand = 'proxe') {
       .order('created_at', { ascending: false })
       .limit(20);
 
-    // Extract interests and patterns from messages
+    // Step 5: Extract interests and patterns from messages
     const previousInterests = extractInterests(messages || []);
     const conversationPhase = determinePhase(messages || []);
 
-    // Build context object
+    // Combine web conversation summary with WhatsApp summary
+    const webSummary = fullContext.conversationSummary || '';
+    const whatsappSummary = session?.conversation_summary || generateSummary(messages || []);
+    const combinedSummary = webSummary 
+      ? (whatsappSummary !== 'New customer, no previous conversation.' 
+          ? `Web: ${webSummary}\nWhatsApp: ${whatsappSummary}` 
+          : `Web: ${webSummary}`)
+      : whatsappSummary;
+
+    // Merge web user inputs with WhatsApp interests
+    const allInterests = [
+      ...(fullContext.userInputs || []),
+      ...previousInterests
+    ].filter((value, index, self) => 
+      self.indexOf(value) === index && value && value.trim()
+    ).slice(0, 10);
+
+    // Build enriched context object
     const context = {
       customerId: lead.id,
       leadId: lead.id, // Add leadId for clarity
@@ -210,9 +320,9 @@ export async function buildCustomerContext(sessionId, brand = 'proxe') {
       lastContact: lead.last_interaction_at,
       conversationCount: session?.message_count || 0,
       conversationPhase,
-      previousInterests,
+      previousInterests: allInterests,
       budget: lead.unified_context?.budget || null,
-      conversationSummary: session?.conversation_summary || generateSummary(messages || []),
+      conversationSummary: combinedSummary,
       lastMessages: (messages || []).slice(0, 10).reverse().map(msg => ({
         role: msg.sender === 'customer' ? 'user' : 'assistant',
         content: msg.content,
@@ -220,6 +330,11 @@ export async function buildCustomerContext(sessionId, brand = 'proxe') {
       })),
       tags: lead.unified_context?.tags || [],
       metadata: lead.unified_context || {},
+      // Enhanced context from unified_context
+      webConversationSummary: fullContext.conversationSummary,
+      booking: fullContext.booking,
+      webUserInputs: fullContext.userInputs,
+      webConversations: fullContext.webConversations,
       sessionData: session ? {
         sessionId: session.id,
         conversationStatus: session.conversation_status || 'active', // Use conversation_status instead of session_status

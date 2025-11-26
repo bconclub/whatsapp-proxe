@@ -97,6 +97,7 @@ export async function generateResponse(customerContext, message, conversationHis
 /**
  * Build customer context note for inclusion in messages
  * This provides context about the customer without cluttering the system prompt
+ * Enhanced to include web conversations, bookings, and user inputs from unified_context
  */
 function buildCustomerContextNote(context) {
   if (!context) return null;
@@ -115,8 +116,36 @@ function buildCustomerContextNote(context) {
     parts.push(`Phase: ${context.conversationPhase}`);
   }
   
+  // Include web conversation summary if available
+  if (context.webConversationSummary) {
+    parts.push(`Web conversation summary: ${context.webConversationSummary}`);
+  }
+  
+  // Include booking information if exists
+  if (context.booking && context.booking.exists) {
+    const bookingInfo = [];
+    if (context.booking.booking_date) {
+      bookingInfo.push(`Date: ${context.booking.booking_date}`);
+    }
+    if (context.booking.booking_time) {
+      bookingInfo.push(`Time: ${context.booking.booking_time}`);
+    }
+    if (context.booking.booking_status) {
+      bookingInfo.push(`Status: ${context.booking.booking_status}`);
+    }
+    if (bookingInfo.length > 0) {
+      parts.push(`Existing booking: ${bookingInfo.join(', ')}`);
+    }
+  }
+  
+  // Include web user inputs/interests
+  if (context.webUserInputs && context.webUserInputs.length > 0) {
+    parts.push(`Previous interests/questions from web: ${context.webUserInputs.join(', ')}`);
+  }
+  
+  // Include combined interests (from web and WhatsApp)
   if (context.previousInterests && context.previousInterests.length > 0) {
-    parts.push(`Interests: ${context.previousInterests.join(', ')}`);
+    parts.push(`All interests: ${context.previousInterests.join(', ')}`);
   }
   
   if (context.budget) {
@@ -124,7 +153,7 @@ function buildCustomerContextNote(context) {
   }
   
   if (context.conversationSummary && context.conversationSummary !== 'New customer, no previous conversation.') {
-    parts.push(`Summary: ${context.conversationSummary}`);
+    parts.push(`Conversation summary: ${context.conversationSummary}`);
   }
   
   return parts.length > 0 ? parts.join('\n') : null;
