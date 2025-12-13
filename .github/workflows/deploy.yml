@@ -15,6 +15,33 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Increment version
+        id: version
+        run: |
+          # Read current version from package.json
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Increment patch version (1.0.1 → 1.0.2)
+          NEW_VERSION=$(npm version patch --no-git-tag-version | sed 's/v//')
+          echo "New version: $NEW_VERSION"
+          
+          # Set output for use in next steps
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "DEPLOY_VERSION=v$NEW_VERSION" >> $GITHUB_ENV
+          
+          # Commit and push version change
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to $NEW_VERSION" || echo "No changes to commit"
+          git push || echo "⚠️  Push failed - version will be read from package.json on server"
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -26,9 +53,13 @@ jobs:
           script: |
             set -e  # Exit on error
             
+            # Get version from previous step output
+            DEPLOY_VERSION="${{ env.DEPLOY_VERSION }}"
+            
             echo "🚀 Starting deployment..."
             echo "Current user: $(whoami)"
             echo "Current directory: $(pwd)"
+            echo "Deploy version: $DEPLOY_VERSION"
             
             # Create parent directory if it doesn't exist
             mkdir -p /var/www
@@ -62,6 +93,37 @@ jobs:
             # Install dependencies
             echo "📦 Installing dependencies..."
             npm install --production
+            
+            # Write version to file
+            echo "📝 Writing version to file..."
+            echo "$DEPLOY_VERSION" > /var/www/whatsapp-proxe/VERSION
+            echo "✅ Version written: $DEPLOY_VERSION"
+            
+            # Get version from package.json for deploy info
+            DEPLOY_VERSION_FOR_INFO=$(node -p "require('./package.json').version" 2>/dev/null || echo "$DEPLOY_VERSION" | sed 's/v//')
+            DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            
+            # Create DEPLOY_INFO file with semantic version
+            echo "📝 Creating DEPLOY_INFO file..."
+            printf '{"version":"%s","timestamp":"%s","deployer":"github-actions"}\n' "$DEPLOY_VERSION_FOR_INFO" "$DEPLOY_TIME" > /var/www/whatsapp-proxe/DEPLOY_INFO
+            echo "✅ Created DEPLOY_INFO with version=$DEPLOY_VERSION_FOR_INFO, timestamp=$DEPLOY_TIME"
+            
+            # Update .env.local with DEPLOY_VERSION and LAST_DEPLOY_TIME
+            echo "📝 Updating .env.local with deployment info..."
+            if [ -f ".env.local" ]; then
+              # Remove existing DEPLOY_VERSION and LAST_DEPLOY_TIME if present
+              sed -i '/^DEPLOY_VERSION=/d' .env.local
+              sed -i '/^LAST_DEPLOY_TIME=/d' .env.local
+              # Append new values
+              echo "DEPLOY_VERSION=$DEPLOY_VERSION" >> .env.local
+              echo "LAST_DEPLOY_TIME=$DEPLOY_TIME" >> .env.local
+            else
+              # Create new .env.local if it doesn't exist
+              echo "DEPLOY_VERSION=$DEPLOY_VERSION" > .env.local
+              echo "LAST_DEPLOY_TIME=$DEPLOY_TIME" >> .env.local
+              echo "⚠️  Created new .env.local - please add other required variables!"
+            fi
+            echo "✅ Updated .env.local with DEPLOY_VERSION=$DEPLOY_VERSION and LAST_DEPLOY_TIME=$DEPLOY_TIME"
             
             # Check for .env.local file and run environment check
             if [ ! -f ".env.local" ] && [ ! -f ".env" ]; then

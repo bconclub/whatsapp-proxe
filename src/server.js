@@ -162,7 +162,20 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Deploy info endpoint
+// Helper function to get version from package.json (semantic versioning)
+function getVersion() {
+  try {
+    const packagePath = path.join(__dirname, '..', 'package.json');
+    const packageData = JSON.parse(readFileSync(packagePath, 'utf8'));
+    const version = packageData.version || 'unknown';
+    return `v${version}`;
+  } catch (error) {
+    logger.warn('Could not read version from package.json:', error.message);
+    return 'unknown';
+  }
+}
+
+// Deploy info endpoint (legacy, kept for compatibility)
 app.get('/status/deploy-info', (req, res) => {
   try {
     const deployTime = process.env.LAST_DEPLOY_TIME;
@@ -185,6 +198,90 @@ app.get('/status/deploy-info', (req, res) => {
     logger.error('Error in /status/deploy-info:', error);
     res.status(500).json({
       error: 'Failed to get deploy info',
+      version: 'unknown',
+      deployedAt: null,
+      deployedAgo: 'Unknown'
+    });
+  }
+});
+
+// Deploy endpoint - reads from DEPLOY_INFO file
+app.get('/status/deploy', (req, res) => {
+  try {
+    // Try to read DEPLOY_INFO file
+    const deployInfoPath = '/var/www/whatsapp-proxe/DEPLOY_INFO';
+    let deployInfo = null;
+    
+    try {
+      if (existsSync(deployInfoPath)) {
+        const fileContent = readFileSync(deployInfoPath, 'utf8');
+        deployInfo = JSON.parse(fileContent);
+      }
+    } catch (fileError) {
+      logger.warn('Could not read DEPLOY_INFO file:', fileError.message);
+    }
+    
+    // Fallback to environment variables if file doesn't exist
+    if (!deployInfo) {
+      const deployTime = process.env.LAST_DEPLOY_TIME;
+      const gitHash = getGitCommitHash();
+      
+      if (deployTime) {
+        deployInfo = {
+          version: gitHash !== 'unknown' ? gitHash : 'unknown',
+          timestamp: deployTime,
+          deployer: 'env'
+        };
+      }
+    }
+    
+    let deployedAt = null;
+    let deployedAgo = 'Unknown';
+    
+    if (deployInfo && deployInfo.timestamp) {
+      deployedAt = deployInfo.timestamp;
+      deployedAgo = formatTimeAgo(deployInfo.timestamp);
+    }
+    
+    res.json({
+      version: deployInfo?.version || 'unknown',
+      deployedAt,
+      deployedAgo,
+      deployer: deployInfo?.deployer || 'unknown'
+    });
+  } catch (error) {
+    logger.error('Error in /status/deploy:', error);
+    res.status(500).json({
+      error: 'Failed to get deploy info',
+      deployedAt: null,
+      deployedAgo: 'Unknown'
+    });
+  }
+});
+
+// Version endpoint
+app.get('/status/version', (req, res) => {
+  try {
+    const deployTime = process.env.LAST_DEPLOY_TIME;
+    const version = getVersion();
+    
+    let deployedAt = null;
+    let deployedAgo = 'Unknown';
+    
+    if (deployTime) {
+      deployedAt = deployTime;
+      deployedAgo = formatTimeAgo(deployTime);
+    }
+    
+    res.json({
+      version,
+      deployedAt,
+      deployedAgo
+    });
+  } catch (error) {
+    logger.error('Error in /status/version:', error);
+    res.status(500).json({
+      error: 'Failed to get version info',
       version: 'unknown',
       deployedAt: null,
       deployedAgo: 'Unknown'

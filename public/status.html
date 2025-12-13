@@ -277,31 +277,28 @@
         async function checkSystemHealth() {
             const div = document.getElementById('systemHealth');
             const healthData = await fetchJSON(`${API_BASE}/health`);
-            const deployData = await fetchJSON(`${API_BASE}/status/deploy-info`);
+            const versionData = await fetchJSON(`${API_BASE}/status/version`);
+            const deployData = await fetchJSON(`${API_BASE}/status/deploy`);
             
             if (healthData.error) {
                 div.innerHTML = `<span class="status-badge error">Offline</span><br><br><small style="opacity: 0.7; font-size: 12px;">${healthData.error}</small>`;
             } else {
-                const version = deployData.version || 'unknown';
-                const isVersionValid = version !== 'unknown' && /^[a-f0-9]{7}$/i.test(version);
-                const deployLink = isVersionValid ? `https://github.com/bconclub/whatsapp-proxe/commit/${version}` : null;
-                const versionDisplay = deployLink 
-                    ? `<a href="${deployLink}" target="_blank" style="color: #ffffff; text-decoration: none; border-bottom: 1px solid #1a1a1a;">${version}</a>`
-                    : version;
+                const version = versionData.version || 'unknown';
+                const deployTime = deployData.deployedAgo || versionData.deployedAgo || 'Unknown';
                 
                 div.innerHTML = `
                     <span class="status-badge ok online">Online</span>
                     <div class="metric">
                         <span class="metric-label">Version</span>
-                        <span class="metric-value">${versionDisplay}</span>
+                        <span class="metric-value">${version}</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Status</span>
                         <span class="metric-value">${healthData.status || 'OK'}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Last Deploy</span>
-                        <span class="metric-value" style="font-size: 12px; opacity: 0.9;">${deployData.deployedAgo || 'Unknown'}</span>
+                        <span class="metric-label">Deploy Time</span>
+                        <span class="metric-value" style="font-size: 12px; opacity: 0.9;">${deployTime}</span>
                     </div>
                 `;
             }
