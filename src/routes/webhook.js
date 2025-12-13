@@ -58,7 +58,15 @@ router.get('/whatsapp', (req, res) => {
 router.post('/whatsapp', async (req, res) => {
   try {
     // Step 1: Validate Meta signature
-    // req.body is a Buffer (raw body) because we use express.raw() middleware
+    // Debug: Check if req.body is a Buffer
+    const bodyType = typeof req.body;
+    const isBuffer = Buffer.isBuffer(req.body);
+    logger.info('Webhook body debug', { 
+      bodyType, 
+      isBuffer,
+      isObject: typeof req.body === 'object' && req.body !== null && !isBuffer
+    });
+
     const signature = req.headers['x-hub-signature-256'];
     const appSecret = process.env.META_APP_SECRET;
 
@@ -72,8 +80,20 @@ router.post('/whatsapp', async (req, res) => {
       return res.status(403).json({ error: 'Missing signature' });
     }
 
-    // Validate signature using raw body (Buffer)
-    const rawBody = req.body;
+    // Get raw body for signature validation
+    // If express.raw() worked, req.body should be a Buffer
+    // If not, we need to convert the parsed JSON back to string
+    let rawBody;
+    if (Buffer.isBuffer(req.body)) {
+      rawBody = req.body;
+      logger.info('Using req.body as Buffer for signature validation');
+    } else {
+      // Body was parsed as JSON, convert back to string
+      rawBody = Buffer.from(JSON.stringify(req.body), 'utf8');
+      logger.warn('Body was parsed as JSON, converting to Buffer for signature validation');
+    }
+
+    // Validate signature using raw body
     const expectedSignature = 'sha256=' + crypto
       .createHmac('sha256', appSecret)
       .update(rawBody)
@@ -109,9 +129,17 @@ router.post('/whatsapp', async (req, res) => {
     //   }]
     // }
 
+    // Parse webhook data
     let webhookData;
     try {
-      webhookData = JSON.parse(rawBody.toString('utf8'));
+      if (Buffer.isBuffer(req.body)) {
+        // Body is already a Buffer, parse it
+        webhookData = JSON.parse(rawBody.toString('utf8'));
+      } else {
+        // Body was already parsed as JSON, use it directly
+        webhookData = req.body;
+        logger.info('Using already-parsed JSON body');
+      }
     } catch (parseError) {
       logger.error('Failed to parse webhook JSON:', parseError);
       return res.status(400).json({ error: 'Invalid JSON payload' });

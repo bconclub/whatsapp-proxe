@@ -75,8 +75,11 @@ app.use(cors({
 // Serve static files (for debug page)
 app.use(express.static('public'));
 
-// Body parsing
-// Note: Webhook routes need raw body for signature validation, so they're handled separately
+// Webhook Routes (Meta WhatsApp) - needs raw body for signature validation
+// MUST be mounted BEFORE express.json() to capture raw body
+app.use('/webhook', express.raw({ type: 'application/json', limit: '10mb' }), webhookRoutes);
+
+// Body parsing for all other routes
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -764,10 +767,6 @@ app.get('/test-db', async (req, res) => {
     });
   }
 });
-
-// Webhook Routes (Meta WhatsApp) - needs raw body for signature validation
-// Must be mounted before other routes to capture raw body
-app.use('/webhook', express.raw({ type: 'application/json', limit: '10mb' }), webhookRoutes);
 
 // API Routes
 app.use('/api/whatsapp', whatsappRoutes);
