@@ -5,6 +5,72 @@ import { logger } from '../utils/logger.js';
 const router = express.Router();
 
 /**
+ * Send WhatsApp message via Meta API
+ * @param {string} to - Recipient phone number
+ * @param {string} message - Message text to send
+ * @returns {Promise<Object>} - API response
+ */
+async function sendWhatsAppMessage(to, message) {
+  const phoneNumberId = process.env.META_PHONE_NUMBER_ID;
+  const accessToken = process.env.META_ACCESS_TOKEN;
+
+  if (!phoneNumberId || !accessToken) {
+    logger.error('Meta WhatsApp API credentials not configured', {
+      hasPhoneNumberId: !!phoneNumberId,
+      hasAccessToken: !!accessToken
+    });
+    throw new Error('WhatsApp API credentials not configured');
+  }
+
+  const url = `https://graph.facebook.com/v22.0/${phoneNumberId}/messages`;
+  
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: to,
+    text: {
+      body: message
+    }
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const responseData = await response.json();
+
+    if (!response.ok) {
+      logger.error('Failed to send WhatsApp message', {
+        status: response.status,
+        statusText: response.statusText,
+        error: responseData
+      });
+      throw new Error(`WhatsApp API error: ${responseData.error?.message || response.statusText}`);
+    }
+
+    logger.info('WhatsApp message sent successfully', {
+      to,
+      messageId: responseData.messages?.[0]?.id,
+      messageLength: message.length
+    });
+
+    return responseData;
+  } catch (error) {
+    logger.error('Error sending WhatsApp message', {
+      to,
+      error: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+}
+
+/**
  * GET /webhook/whatsapp
  * Meta webhook verification endpoint
  * Meta sends: hub.mode, hub.verify_token, hub.challenge
@@ -375,6 +441,18 @@ async function handleMessage(messageData) {
         tokensUsed: aiResponse.tokensUsed
       }
     );
+
+    // Step 13.5: Send WhatsApp message via Meta API
+    try {
+      await sendWhatsAppMessage(sessionId, aiResponse.rawResponse);
+      logger.info('WhatsApp message sent successfully', { sessionId });
+    } catch (error) {
+      logger.error('Failed to send WhatsApp message', {
+        sessionId,
+        error: error.message
+      });
+      // Don't throw - we still want to store the log even if sending fails
+    }
 
     // Step 14: Store conversation log
     await storeConversationLog({
