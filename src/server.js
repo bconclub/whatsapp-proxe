@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readFileSync } from 'fs';
+import { execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,6 +52,7 @@ import retrainRoutes from './routes/retrain.js';
 import webhookRoutes from './routes/webhook.js';
 
 const app = express();
+app.set('trust proxy', true);
 const PORT = process.env.PORT || 3001;
 
 // Security middleware - disable CSP for debug page
@@ -95,6 +97,52 @@ app.use((req, res, next) => {
   next();
 });
 
+// Helper function to get git commit hash
+function getGitCommitHash() {
+  try {
+    const hash = execSync('git rev-parse --short HEAD', { 
+      cwd: path.join(__dirname, '..'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).trim();
+    return hash.substring(0, 7); // Return first 7 characters
+  } catch (error) {
+    logger.warn('Could not get git commit hash:', error.message);
+    return 'unknown';
+  }
+}
+
+// Helper function to format time ago
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return 'Unknown';
+  
+  try {
+    const deployTime = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - deployTime;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? 's' : ''} ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+    if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+    
+    // For older deployments, show formatted date
+    return deployTime.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  } catch (error) {
+    logger.warn('Could not format time ago:', error.message);
+    return 'Unknown';
+  }
+}
+
 // Health check
 app.get('/health', (req, res) => {
   // Read version from package.json
@@ -112,6 +160,36 @@ app.get('/health', (req, res) => {
     version,
     timestamp: new Date().toISOString() 
   });
+});
+
+// Deploy info endpoint
+app.get('/status/deploy-info', (req, res) => {
+  try {
+    const deployTime = process.env.LAST_DEPLOY_TIME;
+    const version = getGitCommitHash();
+    
+    let deployedAt = null;
+    let deployedAgo = 'Unknown';
+    
+    if (deployTime) {
+      deployedAt = deployTime;
+      deployedAgo = formatTimeAgo(deployTime);
+    }
+    
+    res.json({
+      version,
+      deployedAt,
+      deployedAgo
+    });
+  } catch (error) {
+    logger.error('Error in /status/deploy-info:', error);
+    res.status(500).json({
+      error: 'Failed to get deploy info',
+      version: 'unknown',
+      deployedAt: null,
+      deployedAgo: 'Unknown'
+    });
+  }
 });
 
 // Status page

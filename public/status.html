@@ -9,69 +9,57 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #ffffff;
+            background: #000000;
             min-height: 100vh;
-            padding: 40px 20px;
-            color: #000000;
+            padding: 20px;
+            color: #ffffff;
         }
         .container {
             max-width: 1200px;
             margin: 0 auto;
         }
         .header {
-            border-bottom: 2px solid #000000;
-            padding-bottom: 20px;
-            margin-bottom: 40px;
+            border-bottom: 1px solid #1a1a1a;
+            padding-bottom: 16px;
+            margin-bottom: 24px;
         }
         .header h1 {
-            font-size: 32px;
+            font-size: 24px;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
-            gap: 12px;
-        }
-        .header .subtitle {
-            color: #666666;
-            font-size: 14px;
-            text-align: left;
-            margin-left: 0;
-        }
-        .header-actions {
-            margin-top: 20px;
-            display: flex;
             gap: 10px;
         }
-        .btn {
-            background: #000000;
+        .header .subtitle {
             color: #ffffff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
+            font-size: 13px;
+            opacity: 0.7;
+        }
+        .header-actions {
+            margin-top: 16px;
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            background: #0d0d0d;
+            color: #ffffff;
+            border: 1px solid #1a1a1a;
+            padding: 8px 16px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
-            transition: opacity 0.2s;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 6px;
             line-height: 1;
         }
-        .btn i {
-            font-size: 14px;
-            display: inline-block;
-            vertical-align: middle;
-        }
-        .btn span {
-            display: inline-block;
-            vertical-align: middle;
-        }
         .btn:hover {
-            opacity: 0.8;
+            background: #1a1a1a;
         }
         .btn:active {
-            opacity: 0.6;
+            background: #0d0d0d;
         }
         .btn:disabled {
             opacity: 0.5;
@@ -89,122 +77,136 @@
         }
         .status-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 24px;
-            margin-bottom: 40px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
         }
         .card {
-            background: #ffffff;
-            border: 1px solid #e0e0e0;
-            padding: 24px;
-            border-radius: 0;
+            background: #0d0d0d;
+            border: 1px solid #1a1a1a;
+            padding: 16px;
         }
         .card h2 {
-            font-size: 16px;
+            font-size: 13px;
             font-weight: 600;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            color: #ffffff;
         }
         .card h2 i {
-            font-size: 18px;
+            font-size: 14px;
         }
         .status-badge {
             display: inline-block;
-            padding: 4px 12px;
-            border: 1px solid #000000;
-            font-size: 11px;
+            padding: 3px 10px;
+            border: 1px solid;
+            font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         .status-badge.ok {
-            background: #10b981;
-            color: #ffffff;
-            border-color: #10b981;
+            background: transparent;
+            color: #00ff00;
+            border-color: #00ff00;
         }
         .status-badge.error {
-            background: #ef4444;
-            color: #ffffff;
-            border-color: #ef4444;
+            background: transparent;
+            color: #ff0000;
+            border-color: #ff0000;
         }
         .status-badge.warning {
-            background: #f59e0b;
-            color: #ffffff;
-            border-color: #f59e0b;
+            background: transparent;
+            color: #ffaa00;
+            border-color: #ffaa00;
+        }
+        .status-badge.online {
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
         }
         .key-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e0e0;
+            padding: 10px 0;
+            border-bottom: 1px solid #1a1a1a;
         }
         .key-item:last-child {
             border-bottom: none;
         }
         .key-name {
-            font-weight: 500;
-            font-size: 14px;
+            font-weight: 400;
+            font-size: 13px;
+            color: #ffffff;
         }
         .error-item {
-            padding: 16px 0;
-            border-bottom: 1px solid #e0e0e0;
+            padding: 12px 0;
+            border-bottom: 1px solid #1a1a1a;
         }
         .error-item:last-child {
             border-bottom: none;
         }
         .error-time {
-            font-size: 11px;
-            color: #666666;
-            margin-bottom: 8px;
+            font-size: 10px;
+            color: #ffffff;
+            opacity: 0.6;
+            margin-bottom: 6px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
         .error-message {
-            color: #000000;
-            font-size: 13px;
+            color: #ffffff;
+            font-size: 12px;
             font-family: 'Courier New', monospace;
+            opacity: 0.9;
         }
         .loading {
-            color: #666666;
-            font-size: 14px;
+            color: #ffffff;
+            font-size: 13px;
+            opacity: 0.7;
         }
         .metric {
             display: flex;
             justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid #e0e0e0;
+            padding: 8px 0;
+            border-bottom: 1px solid #1a1a1a;
         }
         .metric:last-child {
             border-bottom: none;
         }
         .metric-label {
-            color: #666666;
-            font-size: 14px;
+            color: #ffffff;
+            font-size: 13px;
+            opacity: 0.8;
         }
         .metric-value {
             font-weight: 500;
-            color: #000000;
-            font-size: 14px;
+            color: #ffffff;
+            font-size: 13px;
         }
         .full-width {
             grid-column: 1 / -1;
         }
         .timestamp {
             text-align: center;
-            color: #666666;
-            font-size: 11px;
-            margin-top: 40px;
+            color: #ffffff;
+            font-size: 10px;
+            margin-top: 24px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            opacity: 0.6;
         }
         .empty-state {
-            color: #999999;
-            font-size: 13px;
+            color: #ffffff;
+            font-size: 12px;
+            opacity: 0.6;
         }
     </style>
 </head>
@@ -274,24 +276,32 @@
 
         async function checkSystemHealth() {
             const div = document.getElementById('systemHealth');
-            const data = await fetchJSON(`${API_BASE}/health`);
+            const healthData = await fetchJSON(`${API_BASE}/health`);
+            const deployData = await fetchJSON(`${API_BASE}/status/deploy-info`);
             
-            if (data.error) {
-                div.innerHTML = `<span class="status-badge error">Offline</span><br><br><small>${data.error}</small>`;
+            if (healthData.error) {
+                div.innerHTML = `<span class="status-badge error">Offline</span><br><br><small style="opacity: 0.7; font-size: 12px;">${healthData.error}</small>`;
             } else {
+                const version = deployData.version || 'unknown';
+                const isVersionValid = version !== 'unknown' && /^[a-f0-9]{7}$/i.test(version);
+                const deployLink = isVersionValid ? `https://github.com/bconclub/whatsapp-proxe/commit/${version}` : null;
+                const versionDisplay = deployLink 
+                    ? `<a href="${deployLink}" target="_blank" style="color: #ffffff; text-decoration: none; border-bottom: 1px solid #1a1a1a;">${version}</a>`
+                    : version;
+                
                 div.innerHTML = `
-                    <span class="status-badge ok">Online</span>
+                    <span class="status-badge ok online">Online</span>
                     <div class="metric">
                         <span class="metric-label">Version</span>
-                        <span class="metric-value">v${data.version || 'unknown'}</span>
+                        <span class="metric-value">${versionDisplay}</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Status</span>
-                        <span class="metric-value">${data.status || 'OK'}</span>
+                        <span class="metric-value">${healthData.status || 'OK'}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Timestamp</span>
-                        <span class="metric-value">${new Date(data.timestamp).toLocaleString()}</span>
+                        <span class="metric-label">Last Deploy</span>
+                        <span class="metric-value" style="font-size: 12px; opacity: 0.9;">${deployData.deployedAgo || 'Unknown'}</span>
                     </div>
                 `;
             }
@@ -302,7 +312,7 @@
             const data = await fetchJSON(`${API_BASE}/status/env`);
             
             if (data.error) {
-                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small>${data.error}</small>`;
+                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small style="opacity: 0.7; font-size: 12px;">${data.error}</small>`;
             } else {
                 const keys = data.keys || [];
                 if (keys.length === 0) {
@@ -324,12 +334,12 @@
             const data = await fetchJSON(`${API_BASE}/status/database`);
             
             if (data.error) {
-                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small>${data.error}</small>`;
+                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small style="opacity: 0.7; font-size: 12px;">${data.error}</small>`;
             } else {
                 const status = data.connected ? 'ok' : 'error';
                 div.innerHTML = `
                     <span class="status-badge ${status}">${data.connected ? 'Connected' : 'Disconnected'}</span>
-                    ${data.message ? `<br><br><small>${data.message}</small>` : ''}
+                    ${data.message ? `<br><br><small style="opacity: 0.7; font-size: 12px;">${data.message}</small>` : ''}
                 `;
             }
         }
@@ -339,7 +349,7 @@
             const data = await fetchJSON(`${API_BASE}/status/api`);
             
             if (data.error) {
-                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small>${data.error}</small>`;
+                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small style="opacity: 0.7; font-size: 12px;">${data.error}</small>`;
             } else {
                 const apis = data.apis || {};
                 if (Object.keys(apis).length === 0) {
@@ -369,7 +379,7 @@
             const data = await fetchJSON(`${API_BASE}/debug/errors`);
             
             if (data.error) {
-                div.innerHTML = `<span class="status-badge error">Error loading</span><br><br><small>${data.error}</small>`;
+                div.innerHTML = `<span class="status-badge error">Error loading</span><br><br><small style="opacity: 0.7; font-size: 12px;">${data.error}</small>`;
             } else {
                 const errors = data.recentErrors || [];
                 if (errors.length === 0) {
@@ -391,7 +401,7 @@
             const data = await fetchJSON(`${API_BASE}/status/metrics`);
             
             if (data.error) {
-                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small>${data.error}</small>`;
+                div.innerHTML = `<span class="status-badge error">Error</span><br><br><small style="opacity: 0.7; font-size: 12px;">${data.error}</small>`;
             } else {
                 const formatTime = (ms) => {
                     if (ms < 1000) return `${ms}ms`;
@@ -413,7 +423,7 @@
                         </div>
                         <div class="metric">
                             <span class="metric-label">Note</span>
-                            <span class="metric-value" style="font-size: 11px; color: #666;">Send a message to generate data</span>
+                            <span class="metric-value" style="font-size: 11px; opacity: 0.6;">Send a message to generate data</span>
                         </div>
                     `;
                 } else {
@@ -439,8 +449,8 @@
                             <span class="metric-label">Sample</span>
                             <span class="metric-value">${totalRequests}/${sampleSize}</span>
                         </div>
-                        <div class="metric" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
-                            <span class="metric-label" style="font-size: 11px; color: #666;">Time from input received to output sent</span>
+                        <div class="metric" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #1a1a1a;">
+                            <span class="metric-label" style="font-size: 11px; opacity: 0.6;">Time from input received to output sent</span>
                         </div>
                     `;
                 }
