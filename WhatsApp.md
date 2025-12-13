@@ -1,6 +1,6 @@
 # WhatsApp PROXe - Master Build Architecture
 
-**Version:** 1.0.0  
+**Version:** 1.0.1  
 **Last Updated:** 2025-01-22  
 **Status:** Production Ready
 
@@ -265,7 +265,7 @@ The system uses a **unified multi-channel schema** that supports WhatsApp, Web, 
 | `customer_name` | TEXT | Customer's name |
 | `email` | TEXT | Customer's email |
 | `phone` | TEXT | Original phone format |
-| `customer_phone_normalized` | TEXT | Normalized (digits only) for deduplication |
+| `customer_phone_normalized` | TEXT | Normalized to last 10 digits (removes country code) for deduplication |
 | `first_touchpoint` | ENUM | `'web'`, `'whatsapp'`, `'voice'`, `'social'` |
 | `last_touchpoint` | ENUM | Most recent channel |
 | `last_interaction_at` | TIMESTAMP | Last interaction timestamp |
@@ -276,6 +276,14 @@ The system uses a **unified multi-channel schema** that supports WhatsApp, Web, 
 
 **Deduplication Key**: `(customer_phone_normalized, brand)`
 
+**Phone Number Normalization**:
+- **Stored as-is**: Original phone format stored in `phone` field (preserves WhatsApp format like "919876543210")
+- **Normalized for matching**: `customer_phone_normalized` uses **last 10 digits only** (removes country code)
+- **Matching logic**: 
+  - Web user: "9876543210" → normalized: "9876543210"
+  - WhatsApp user: "919876543210" → normalized: "9876543210" (last 10 digits)
+  - **Result**: Same person recognized across channels ✅
+
 ##### `whatsapp_sessions`
 **Purpose**: WhatsApp-specific session data
 
@@ -284,13 +292,15 @@ The system uses a **unified multi-channel schema** that supports WhatsApp, Web, 
 | `id` | UUID | Primary key |
 | `lead_id` | UUID | Foreign key to `all_leads.id` |
 | `brand` | ENUM | `'proxe'` or `'windchasers'` |
-| `external_session_id` | TEXT | WhatsApp phone number (unique) |
+| `customer_phone` | TEXT | WhatsApp phone number (original format, e.g., "919876543210") |
+| `customer_phone_normalized` | TEXT | Normalized to last 10 digits (for matching with web) |
 | `customer_name` | TEXT | Profile name |
-| `whatsapp_number` | TEXT | WhatsApp number |
-| `conversation_summary` | TEXT | AI-generated summary |
+| `customer_email` | TEXT | Customer email |
+| `conversation_summary` | TEXT | AI-generated summary (extracts key info, not raw messages) |
+| `conversation_context` | JSONB | Structured conversation context (phase, interests, topics) |
+| `user_inputs_summary` | JSONB | User inputs/interests summary |
 | `message_count` | INTEGER | Total messages in session |
 | `last_message_at` | TIMESTAMP | Last message timestamp |
-| `session_status` | TEXT | `'active'`, `'completed'`, `'abandoned'` |
 | `channel_data` | JSONB | Additional metadata |
 | `created_at` | TIMESTAMP | Session creation |
 | `updated_at` | TIMESTAMP | Last update |
@@ -392,17 +402,23 @@ All tables have RLS enabled:
 
 **Process Flow**:
 1. Validate input (Zod schema)
-2. Get/create lead in `all_leads`
-3. Get/create WhatsApp session
+2. Get/create lead in `all_leads` (using normalized phone - last 10 digits)
+3. Get/create WhatsApp session (using normalized phone)
 4. Link session to lead
-5. Build customer context
+5. Build customer context (includes unified_context from web + WhatsApp)
 6. Get conversation history (last 10 messages)
 7. Add user message to `messages` table
 8. Generate AI response (Claude)
 9. Add assistant response to `messages` table
-10. Format for WhatsApp
-11. Store analytics metadata
-12. Return structured response
+10. Generate conversation summary (extracts key info: bookings, pricing, topics)
+11. Extract user interests from conversation
+12. Update conversation data in `whatsapp_sessions`:
+    - `conversation_summary` (key info summary)
+    - `conversation_context` (structured context JSONB)
+    - `user_inputs_summary` (interests JSONB)
+13. Format for WhatsApp
+14. Store analytics metadata
+15. Return structured response
 
 #### 2. `GET /api/customer/:sessionId`
 Fetch customer profile by phone number
@@ -435,6 +451,17 @@ Aggregate logs for model retraining (open integration)
 
 #### `GET /health`
 Health check endpoint
+
+**Response**:
+```json
+{
+  "status": "ok",
+  "version": "1.0.1",
+  "timestamp": "2025-01-22T10:30:00.000Z"
+}
+```
+
+**Note**: Version is read from `package.json` and increments with each deployment
 
 #### `GET /status`
 Status dashboard page
@@ -469,10 +496,16 @@ Message metadata inspection
 ### Service Responsibilities
 
 #### `customerService.js`
-- **Purpose**: Lead and session management
+- **Purpose**: Lead and session management with unified context
 - **Key Functions**:
-  - `getOrCreateLead(phone, brand, leadData)` - Create/get lead in `all_leads`
-  - `buildCustomerContext(sessionId, brand)` - Build full customer context
+  - `normalizePhone(phone)` - Normalize phone to last 10 digits (removes country code)
+  - `safeString(value)` - Safely convert values to trimmed strings (handles null/undefined)
+  - `getOrCreateLead(phone, brand, leadData)` - Create/get lead in `all_leads` (uses normalized phone)
+  - `getCustomerFullContext(phone, brand)` - Fetch unified_context from `all_leads` (web conversations, bookings, user inputs)
+  - `buildCustomerContext(sessionId, brand)` - Build enriched customer context (merges web + WhatsApp data)
+  - `generateSummary(messages)` - Generate intelligent summary (extracts key info: bookings, pricing, topics)
+  - `extractInterests(messages)` - Extract customer interests from conversation
+  - `updateWhatsAppContext(leadId, summaryData)` - Update WhatsApp context in `unified_context.whatsapp`
   - `getLeadById(leadId)` - Fetch lead by ID
   - `updateLeadContact(leadId)` - Update last interaction timestamp
 
@@ -520,11 +553,15 @@ Message metadata inspection
   - `getMessagesForRetraining(filters)` - Aggregate training data
 
 #### `whatsappSessionService.js`
-- **Purpose**: WhatsApp session management
+- **Purpose**: WhatsApp session management with conversation data persistence
 - **Key Functions**:
-  - `getOrCreateWhatsAppSession(externalSessionId, brand, sessionData)` - Create/get session
+  - `getOrCreateWhatsAppSession(externalSessionId, brand, sessionData)` - Create/get session (uses normalized phone)
   - `linkSessionToLead(sessionId, leadId)` - Link session to lead
   - `incrementSessionMessageCount(sessionId)` - Update message count
+  - `updateConversationSummary(sessionId, summary)` - Update conversation summary
+  - `updateConversationContext(sessionId, context)` - Update structured conversation context (JSONB)
+  - `updateUserInputsSummary(sessionId, userInputsSummary)` - Update user inputs summary (JSONB)
+  - `updateConversationData(sessionId, data)` - Update all conversation fields (summary, context, userInputsSummary)
 
 #### `buttonService.js`
 - **Purpose**: Button action handling
@@ -563,11 +600,21 @@ Message metadata inspection
 10. Generate AI Response
     ├── Detect Intent (for auto-buttons)
     ├── Query Knowledge Base (if not greeting)
-    ├── Build System Prompt
+    ├── Build System Prompt (includes unified_context: web conversations, bookings, user inputs)
     ├── Call Claude API
     └── Parse Response (buttons, urgency)
     ↓
 11. Add Assistant Response to messages table
+    ↓
+11.5. Generate Conversation Data
+    ├── Generate conversation summary (extract key info: bookings, pricing, topics)
+    ├── Extract user interests from conversation
+    ├── Build conversation context (structured JSONB)
+    ├── Build user inputs summary (JSONB)
+    └── Update whatsapp_sessions:
+        ├── conversation_summary
+        ├── conversation_context
+        └── user_inputs_summary
     ↓
 12. Format for WhatsApp
     ├── Clean markdown
@@ -589,14 +636,46 @@ Message metadata inspection
 
 ```
 Customer Context = {
+  // Basic Info
   name: from all_leads.customer_name,
-  conversationCount: count from messages,
-  conversationPhase: determined from history,
-  previousInterests: extracted from messages,
-  budget: extracted from messages,
-  conversationSummary: AI-generated summary
+  phone: from all_leads.phone (original format),
+  brand: from all_leads.brand,
+  firstTouchpoint: from all_leads.first_touchpoint,
+  lastTouchpoint: from all_leads.last_touchpoint,
+  
+  // Conversation Data
+  conversationCount: from whatsapp_sessions.message_count,
+  conversationPhase: determined from history (discovery/evaluation/closing),
+  previousInterests: merged from web + WhatsApp (extracted from messages),
+  budget: from all_leads.unified_context.budget,
+  
+  // Unified Context (from all_leads.unified_context)
+  webConversationSummary: from unified_context.web.conversation_summary,
+  userInputSummary: from unified_context.web.user_input_summary,
+  booking: from unified_context.web.booking (date, time, status),
+  webUserInputs: from unified_context.web.user_inputs,
+  webConversations: from unified_context.web.conversations,
+  channelData: from unified_context.channel_data,
+  
+  // WhatsApp Summary
+  conversationSummary: Combined web + WhatsApp summary (intelligent extraction),
+  
+  // Session Data
+  sessionData: from whatsapp_sessions (conversation_status, last_message_at, channel_data)
 }
 ```
+
+**Phone Normalization**:
+- All phone numbers normalized to **last 10 digits** for matching
+- Ensures web ("9876543210") and WhatsApp ("919876543210") numbers match correctly
+- Original format preserved in `phone` field, normalized version in `customer_phone_normalized`
+
+**Conversation Summary Generation**:
+- `generateSummary()` extracts key information instead of concatenating messages
+- Prioritizes: 1) Bookings/Demos, 2) Pricing, 3) Customer Topics
+- Handles "unknown" sender format from WhatsApp
+- Limits summary to 300 characters for readability
+- Example: "Demo call booked: tomorrow at 6 PM. Pricing: ₹15,000/month. Customer inquired about: Pricing inquiry, Booking/scheduling"
 
 ---
 
@@ -859,7 +938,12 @@ The system automatically detects variables using multiple naming conventions:
 
 - [x] Multi-brand support (PROXe, Windchasers)
 - [x] AI-powered message processing (Claude Sonnet 4)
-- [x] Customer context enrichment
+- [x] Unified customer context (web + WhatsApp + voice + social)
+- [x] Phone number normalization (last 10 digits for cross-channel matching)
+- [x] Robust string handling (safeString helper for null/undefined safety)
+- [x] Intelligent conversation summarization (extracts key info: bookings, pricing, topics)
+- [x] Conversation data persistence (summary, context, user inputs in whatsapp_sessions)
+- [x] Customer context enrichment from unified_context
 - [x] Conversation history management
 - [x] Knowledge base integration
 - [x] Automatic button generation (intent-based)
@@ -868,7 +952,7 @@ The system automatically detects variables using multiple naming conventions:
 - [x] Comprehensive logging and analytics
 - [x] Rate limiting and security
 - [x] Error handling and recovery
-- [x] Real-time status dashboard
+- [x] Real-time status dashboard with version tracking
 - [x] Markdown cleaning for WhatsApp
 - [x] Response time optimization
 
@@ -923,6 +1007,15 @@ curl -X POST http://localhost:3002/api/whatsapp/message \
 
 ## Version History
 
+- **v1.0.1** (2025-01-22): Enhanced unified context and conversation intelligence
+  - Phone normalization: Uses last 10 digits for cross-channel matching (web + WhatsApp)
+  - Safe string handling: Added `safeString()` helper for robust null/undefined handling
+  - Intelligent conversation summaries: `generateSummary()` extracts key info (bookings, pricing, topics) instead of concatenating messages
+  - Conversation data persistence: Saves `conversation_summary`, `conversation_context`, and `user_inputs_summary` to `whatsapp_sessions`
+  - Enhanced context building: Merges web conversations, bookings, and user inputs from `unified_context`
+  - Version tracking: `/health` endpoint includes version from `package.json`
+  - Updated `whatsapp_sessions` schema: Added `conversation_context` and `user_inputs_summary` JSONB fields
+
 - **v1.0.0** (2025-01-22): Master architecture document created
   - Consolidated all architecture documentation
   - Added performance optimizations
@@ -952,5 +1045,92 @@ curl -X POST http://localhost:3002/api/whatsapp/message \
 **This document is maintained as the single source of truth for the WhatsApp PROXe Backend architecture.**
 
 **Last Updated**: 2025-01-22  
+**Version**: 1.0.1  
 **Maintained By**: Development Team
+
+---
+
+## Key Implementation Details
+
+### Phone Number Normalization
+
+The system uses **last 10 digits** normalization to ensure consistent matching across channels:
+
+```javascript
+function normalizePhone(phone) {
+  if (!phone) return null;
+  const digits = safeString(phone).replace(/\D/g, '');
+  if (!digits || digits.length < 10) return null;
+  return String(digits.slice(-10)); // Last 10 digits only
+}
+```
+
+**Examples**:
+- Web: "+91 9876543210" → normalized: "9876543210"
+- WhatsApp: "919876543210" → normalized: "9876543210"
+- **Result**: Same person recognized ✅
+
+### Safe String Handling
+
+All string operations use `safeString()` helper to prevent runtime errors:
+
+```javascript
+function safeString(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  return String(value).trim();
+}
+```
+
+### Conversation Summary Generation
+
+The `generateSummary()` function intelligently extracts key information:
+
+1. **Extracts bookings/demos**: "Demo call booked: tomorrow at 6 PM"
+2. **Extracts pricing**: "Pricing: ₹15,000/month"
+3. **Extracts customer topics**: "Customer inquired about: Pricing inquiry, Booking/scheduling"
+4. **Prioritizes information**: Bookings first, then pricing, then topics
+5. **Handles unknown senders**: Detects customer vs assistant messages even with "unknown" sender
+6. **Limits length**: Truncates to 300 characters for readability
+
+**Example Output**:
+```
+"Demo call booked: tomorrow at 6 PM. Pricing: ₹15,000/month. Customer inquired about: Pricing inquiry, Booking/scheduling"
+```
+
+Instead of:
+```
+"unknown: Hey Thanzeel! 👋 I see you've got a demo call booked for tomorrow at 6 PM..."
+```
+
+### Unified Context Structure
+
+The `unified_context` JSONB field in `all_leads` aggregates data from all channels:
+
+```json
+{
+  "web": {
+    "conversation_summary": "Customer inquired about pricing and features",
+    "user_input_summary": "Interested in PROXe pricing and WhatsApp integration",
+    "user_inputs": ["pricing", "whatsapp", "features"],
+    "booking": {
+      "exists": true,
+      "booking_date": "2025-01-23",
+      "booking_time": "6:00 PM",
+      "booking_status": "confirmed"
+    },
+    "conversations": [...]
+  },
+  "whatsapp": {
+    "conversation_summary": "Demo call booked: tomorrow at 6 PM",
+    "last_interaction": "2025-01-22T10:30:00Z",
+    "booking_status": "confirmed",
+    "booking_date": "2025-01-23",
+    "booking_time": "6:00 PM"
+  },
+  "channel_data": {...}
+}
+```
+
+This unified context is used to enrich AI prompts with cross-channel customer history.
 
