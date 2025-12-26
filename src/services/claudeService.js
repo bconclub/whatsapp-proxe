@@ -195,23 +195,106 @@ function buildCustomerContextNote(context) {
 }
 
 /**
- * Get fallback button if Claude didn't suggest one
- * Simple fallback based on booking status
- * @param {object} customerContext - Customer context object with booking info
- * @returns {Array<string>} Array with exactly 1 button label
+ * Select context-aware button based on conversation and customer context
+ * Returns empty array [] when no button is needed (acknowledgments, casual chat)
+ * @param {string} aiResponse - AI's response text
+ * @param {string} userMessage - User's message
+ * @param {object} customerContext - Customer context object with booking info, etc.
+ * @returns {Array<string>} Array with 0 or 1 button label
  */
-function getFallbackButton(customerContext = {}) {
-  const hasBooking = customerContext?.booking?.exists;
+function selectContextButton(aiResponse, userMessage, customerContext = {}) {
+  const lowerResponse = aiResponse.toLowerCase();
+  const lowerMessage = userMessage.toLowerCase();
   
-  if (hasBooking) {
-    return ["Ask a Question"];
+  // Check booking status
+  const hasBooking = customerContext?.booking?.exists ||
+                     lowerResponse.includes('booking confirmed') ||
+                     lowerResponse.includes('demo is confirmed') ||
+                     lowerResponse.includes('demo booked') ||
+                     lowerResponse.includes('call scheduled') ||
+                     lowerResponse.includes('already have a demo');
+  
+  const hasWebHistory = customerContext?.webConversationSummary || 
+                        customerContext?.webUserInputs?.length > 0;
+  
+  // NO BUTTON scenarios - casual chat, acknowledgments
+  const noButtonPhrases = ['thanks', 'thank you', 'ok', 'okay', 'got it', 'sounds good', 'great', 'awesome', 'perfect', 'cool', 'nice', 'alright', 'sure', 'yes', 'yep', 'yeah'];
+  const isAcknowledgment = noButtonPhrases.some(phrase => lowerMessage.trim() === phrase || lowerMessage.trim() === phrase + '!');
+  
+  if (isAcknowledgment) {
+    return []; // No button needed
   }
+  
+  // USER HAS BOOKING - specific buttons only
+  if (hasBooking) {
+    // Reschedule intent
+    if (lowerMessage.includes('reschedule') || lowerMessage.includes('change time') || lowerMessage.includes('change date') || lowerMessage.includes('different time') || lowerMessage.includes('different day')) {
+      return ["Reschedule Call"];
+    }
+    
+    // Want human help
+    if (lowerMessage.includes('talk to') || lowerMessage.includes('speak to') || lowerMessage.includes('human') || lowerMessage.includes('someone') || lowerMessage.includes('person') || lowerMessage.includes('team')) {
+      return ["Talk to Team"];
+    }
+    
+    // Want to prepare
+    if (lowerMessage.includes('prepare') || lowerMessage.includes('ready') || lowerMessage.includes('before the call') || lowerMessage.includes('before demo')) {
+      return ["Prepare for Call"];
+    }
+    
+    // Want to learn more
+    if (lowerMessage.includes('how') || lowerMessage.includes('what') || lowerMessage.includes('feature') || lowerMessage.includes('learn') || lowerMessage.includes('understand') || lowerMessage.includes('tell me')) {
+      return ["Learn More"];
+    }
+    
+    // Response mentions getting started
+    if (lowerResponse.includes('get started') || lowerResponse.includes('deploy') || lowerResponse.includes('set up')) {
+      return ["Get Started"];
+    }
+    
+    // Default for booking users asking questions - no button, let them chat
+    return [];
+  }
+  
+  // USER WITHOUT BOOKING
+  
+  // Pricing questions
+  if (lowerMessage.includes('pricing') || lowerMessage.includes('price') || lowerMessage.includes('cost') || lowerMessage.includes('how much') || lowerMessage.includes('plans')) {
+    return ["View Plans"];
+  }
+  
+  // Feature/demo questions  
+  if (lowerMessage.includes('how does') || lowerMessage.includes('feature') || lowerMessage.includes('what can') || lowerMessage.includes('show me') || lowerMessage.includes('how it works') || lowerMessage.includes('demo')) {
+    return ["See Demo"];
+  }
+  
+  // Response mentions pricing
+  if (lowerResponse.includes('$99') || lowerResponse.includes('$199') || lowerResponse.includes('pricing') || lowerResponse.includes('per month')) {
+    return ["Book Demo"];
+  }
+  
+  // Response invites to see demo
+  if (lowerResponse.includes('see a demo') || lowerResponse.includes('show you') || lowerResponse.includes('see it in action') || lowerResponse.includes('want to see')) {
+    return ["Book Demo"];
+  }
+  
+  // User with web history but no booking - nudge to book
+  if (hasWebHistory) {
+    return ["Book Demo"];
+  }
+  
+  // New user exploring
+  if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey')) {
+    return ["Learn More"];
+  }
+  
+  // Default for new users
   return ["Learn More"];
 }
 
 /**
  * Parse Claude response for buttons and metadata
- * Extracts Claude's suggested button or uses fallback
+ * Extracts Claude's suggested button or uses context-aware selection
  */
 function parseResponse(rawResponse, userMessage = '', messageCount = 0, isNewUser = false, customerContext = null) {
   let text = rawResponse;
@@ -229,14 +312,14 @@ function parseResponse(rawResponse, userMessage = '', messageCount = 0, isNewUse
     // Remove all button markers from text
     text = rawResponse.replace(buttonRegex, '').trim();
   } else {
-    // Fallback if Claude didn't suggest a button
-    buttons = getFallbackButton(customerContext);
+    // Use context-aware button selection if Claude didn't suggest one
+    buttons = selectContextButton(rawResponse, userMessage, customerContext || {});
   }
   
   // Clean up any extra whitespace or newlines at the end
   text = text.replace(/\n+$/, '').trim();
   
-  // Determine response type
+  // Determine response type based on whether we have buttons
   const responseType = buttons.length > 0 ? 'text_with_buttons' : 'text_only';
 
   // Determine urgency (simple heuristic)
