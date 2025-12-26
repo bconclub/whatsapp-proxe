@@ -5,7 +5,7 @@ import { addToHistory } from './conversationService.js';
 
 /**
  * Store conversation log
- * Now stores analytics data in messages table metadata instead of separate conversation_logs table
+ * Now stores analytics data in conversations table metadata instead of separate conversation_logs table
  * @param {object} logData - Log data object
  * @param {string} logData.customerId - Lead UUID (mapped from customerId for compatibility)
  * @param {string} logData.message - Customer message
@@ -23,13 +23,13 @@ export async function storeConversationLog(logData) {
       throw new Error('leadId or customerId is required');
     }
 
-    // The customer message and AI response are already logged via addToHistory
+    // The customer message and AI response are already logged via addToHistory/logMessage
     // This function now just updates the AI response message with analytics metadata
     // We need to find the most recent AI response message and update its metadata
     
     // Get the most recent agent message for this lead
     const { data: recentMessages, error: fetchError } = await supabase
-      .from('messages')
+      .from('conversations')
       .select('id')
       .eq('lead_id', leadId)
       .eq('channel', 'whatsapp')
@@ -49,7 +49,7 @@ export async function storeConversationLog(logData) {
       };
 
       const { error: updateError } = await supabase
-        .from('messages')
+        .from('conversations')
         .update({
           metadata: analyticsMetadata
         })
@@ -113,7 +113,7 @@ export function extractKeywords(message) {
 export async function getMessagesForRetraining(filters = {}) {
   try {
     let query = supabase
-      .from('messages')
+      .from('conversations')
       .select('*')
       .eq('channel', 'whatsapp')
       .order('created_at', { ascending: false });
@@ -187,7 +187,7 @@ export async function getAverageResponseTimes() {
   try {
     // Query the last 5 agent messages - fresh data every time, no caching
     const { data: messages, error } = await supabase
-      .from('messages')
+      .from('conversations')
       .select('metadata, created_at')
       .eq('channel', 'whatsapp')
       .eq('sender', 'agent')

@@ -594,7 +594,7 @@ app.get('/debug/metrics', async (req, res) => {
     
     // Get last 10 agent messages to see what we have
     const { data: messages, error } = await supabase
-      .from('messages')
+      .from('conversations')
       .select('id, metadata, created_at, sender, channel')
       .eq('channel', 'whatsapp')
       .eq('sender', 'agent')
@@ -738,16 +738,16 @@ app.get('/test-db', async (req, res) => {
       sessionsResult = { ok: false, error: err.message, type: err.constructor.name };
     }
     
-    // Test messages table
-    let messagesResult = { ok: false, error: null };
+    // Test conversations table
+    let conversationsResult = { ok: false, error: null };
     try {
-      const { data: messages, error: messagesError } = await supabase
-        .from('messages')
+      const { data: conversations, error: conversationsError } = await supabase
+        .from('conversations')
         .select('count')
         .limit(1);
-      messagesResult = messagesError ? { ok: false, error: messagesError.message, code: messagesError.code } : { ok: true };
+      conversationsResult = conversationsError ? { ok: false, error: conversationsError.message, code: conversationsError.code } : { ok: true };
     } catch (err) {
-      messagesResult = { ok: false, error: err.message, type: err.constructor.name };
+      conversationsResult = { ok: false, error: err.message, type: err.constructor.name };
     }
     
     res.json({
@@ -756,7 +756,7 @@ app.get('/test-db', async (req, res) => {
       tables: {
         all_leads: leadsResult,
         whatsapp_sessions: sessionsResult,
-        messages: messagesResult
+        conversations: conversationsResult
       }
     });
   } catch (error) {

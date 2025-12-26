@@ -451,7 +451,7 @@ export async function getCustomerFullContext(phone, brand = 'proxe') {
  * Build full customer context for AI
  * Enhanced flow: Gets customer, checks all_leads, fetches unified_context,
  * checks for bookings, and builds enriched context
- * Uses all_leads, whatsapp_sessions, and messages tables
+ * Uses all_leads, whatsapp_sessions, and conversations tables
  */
 export async function buildCustomerContext(sessionId, brand = 'proxe') {
   try {
@@ -469,9 +469,9 @@ export async function buildCustomerContext(sessionId, brand = 'proxe') {
       .eq('brand', brand)
       .single();
     
-    // Step 4: Fetch conversation history from messages table (WhatsApp channel)
+    // Step 4: Fetch conversation history from conversations table (WhatsApp channel)
     const { data: messages } = await supabase
-      .from('messages')
+      .from('conversations')
       .select('*')
       .eq('lead_id', lead.id)
       .eq('channel', 'whatsapp')

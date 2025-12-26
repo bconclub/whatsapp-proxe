@@ -426,7 +426,7 @@ async function handleMessage(messageData) {
     // Check if lead has existing messages BEFORE adding current message
     const { supabase } = await import('../config/supabase.js');
     const { data: existingMessages, error: messagesError } = await supabase
-      .from('messages')
+      .from('conversations')
       .select('id')
       .eq('lead_id', lead.id)
       .eq('channel', 'whatsapp')
@@ -442,7 +442,7 @@ async function handleMessage(messageData) {
       existingMessagesCount: existingMessages?.length || 0
     });
 
-    // Step 4: Add user message to messages table
+    // Step 4: Add user message to conversations table (via logMessage)
     await addToHistory(lead.id, message, 'user', 'text', {
       input_received_at: inputReceivedAt
     });
@@ -514,7 +514,7 @@ async function handleMessage(messageData) {
       inputToOutputGap = outputSentAt - inputReceivedAt;
     }
 
-    // Step 7: Add assistant response to messages table
+    // Step 7: Add assistant response to conversations table (via logMessage)
     await addToHistory(lead.id, aiResponse.rawResponse, 'assistant', 'text', {
       input_received_at: inputReceivedAt,
       output_sent_at: outputSentAt,

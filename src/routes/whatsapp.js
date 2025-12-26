@@ -28,7 +28,8 @@ const messageSchema = z.object({
 /**
  * POST /api/whatsapp/message
  * Primary message handler - receives messages from n8n
- * Now uses new schema: all_leads, whatsapp_sessions, messages
+ * Uses schema: all_leads, whatsapp_sessions, conversations
+ * Messages are logged via logMessage() function which inserts to conversations table
  */
 router.post('/message', async (req, res, next) => {
   // Wrap everything in try-catch to ensure errors are caught
@@ -124,7 +125,7 @@ router.post('/message', async (req, res, next) => {
       });
     }
 
-    // Step 5: Get conversation history from messages table
+    // Step 5: Get conversation history from conversations table
     let conversationHistory;
     try {
       conversationHistory = await getConversationHistory(lead.id, 10);
@@ -135,15 +136,26 @@ router.post('/message', async (req, res, next) => {
       conversationHistory = []; // Continue with empty history
     }
 
-    // Step 6: Add user message to messages table with input timestamp
+    // Step 6: Add user message to conversations table with input timestamp (via logMessage)
     try {
-      await addToHistory(lead.id, message, 'user', 'text', {
+      console.log('=== Adding user message to history ===');
+      console.log('lead.id:', lead.id);
+      console.log('lead.id type:', typeof lead.id);
+      console.log('message:', message);
+      console.log('message length:', message?.length);
+      
+      const userMessageResult = await addToHistory(lead.id, message, 'user', 'text', {
         input_received_at: inputReceivedAt
       });
+      
+      console.log('✓ User message added successfully:', userMessageResult?.id);
     } catch (error) {
-      console.error('=== ERROR in addToHistory (user) ===', error);
+      console.error('=== ERROR in addToHistory (user) ===');
+      console.error('lead.id:', lead?.id);
+      console.error('Error message:', error.message);
+      console.error('Error details:', error);
       logger.error('Error adding user message to history:', error);
-      // Continue - logging is not critical
+      // Continue - logging is not critical, but log the error for debugging
     }
 
     // Step 7: Increment session message count
@@ -175,12 +187,27 @@ router.post('/message', async (req, res, next) => {
     const outputSentAt = Date.now();
     const inputToOutputGap = outputSentAt - inputReceivedAt; // Total time from input to output
 
-    // Step 10: Add assistant response to messages table
-    await addToHistory(lead.id, aiResponse.rawResponse, 'assistant', 'text', {
-      input_received_at: inputReceivedAt,
-      output_sent_at: outputSentAt,
-      input_to_output_gap_ms: inputToOutputGap
-    });
+    // Step 10: Add assistant response to conversations table (via logMessage)
+    try {
+      console.log('=== Adding assistant message to history ===');
+      console.log('lead.id:', lead.id);
+      console.log('aiResponse.rawResponse length:', aiResponse.rawResponse?.length);
+      
+      const assistantMessageResult = await addToHistory(lead.id, aiResponse.rawResponse, 'assistant', 'text', {
+        input_received_at: inputReceivedAt,
+        output_sent_at: outputSentAt,
+        input_to_output_gap_ms: inputToOutputGap
+      });
+      
+      console.log('✓ Assistant message added successfully:', assistantMessageResult?.id);
+    } catch (error) {
+      console.error('=== ERROR in addToHistory (assistant) ===');
+      console.error('lead.id:', lead?.id);
+      console.error('Error message:', error.message);
+      console.error('Error details:', error);
+      logger.error('Error adding assistant message to history:', error);
+      // Continue - message was sent, but logging failed
+    }
 
     // Step 11: Increment session message count again
     await incrementSessionMessageCount(whatsappSession.id);

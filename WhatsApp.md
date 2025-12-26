@@ -1,7 +1,7 @@
 # WhatsApp PROXe - Master Build Architecture
 
 **Version:** 1.0.1  
-**Last Updated:** 2025-01-22  
+**Last Updated:** 2025-12-22  
 **Status:** Production Ready
 
 > **This document is the single source of truth for the WhatsApp PROXe Backend build architecture.**
@@ -33,19 +33,23 @@
 **WhatsApp PROXe Backend** is an AI-powered message processing service that transforms raw customer WhatsApp messages into contextual, personalized responses using Claude AI and Supabase.
 
 ### Core Purpose
-- Receive WhatsApp messages via n8n webhooks
+- Receive WhatsApp messages via n8n webhooks OR direct Meta WhatsApp webhooks
 - Enrich messages with customer context from Supabase
 - Generate intelligent responses using Claude AI
 - Format responses for WhatsApp (text, buttons, carousels)
+- Send messages directly via Meta WhatsApp Business API
 - Log all interactions for analytics and retraining
 
 ### Key Capabilities
 - ✅ Multi-brand support (PROXe, Windchasers)
 - ✅ Real-time AI chat with Claude Sonnet 4
+- ✅ Direct Meta WhatsApp integration (webhook + API)
 - ✅ Customer context enrichment
 - ✅ Conversation history management
 - ✅ Knowledge base integration
 - ✅ Automatic button generation based on intent
+- ✅ Interactive button message handling
+- ✅ New user detection with dynamic 2-button system
 - ✅ Performance monitoring and metrics
 - ✅ Comprehensive logging and analytics
 
@@ -305,7 +309,7 @@ The system uses a **unified multi-channel schema** that supports WhatsApp, Web, 
 | `created_at` | TIMESTAMP | Session creation |
 | `updated_at` | TIMESTAMP | Last update |
 
-##### `messages`
+##### `conversations`
 **Purpose**: Universal append-only message log (all channels)
 
 | Column | Type | Description |
@@ -407,9 +411,9 @@ All tables have RLS enabled:
 4. Link session to lead
 5. Build customer context (includes unified_context from web + WhatsApp)
 6. Get conversation history (last 10 messages)
-7. Add user message to `messages` table
+7. Add user message to `conversations` table (via `logMessage()`)
 8. Generate AI response (Claude)
-9. Add assistant response to `messages` table
+9. Add assistant response to `conversations` table (via `logMessage()`)
 10. Generate conversation summary (extracts key info: bookings, pricing, topics)
 11. Extract user interests from conversation
 12. Update conversation data in `whatsapp_sessions`:
@@ -446,6 +450,53 @@ Generate booking link (open integration)
 
 #### 10. `POST /api/nightly/retrain`
 Aggregate logs for model retraining (open integration)
+
+### Meta WhatsApp Webhook Endpoints
+
+#### 11. `GET /webhook/whatsapp`
+Webhook verification endpoint for Meta WhatsApp
+
+**Purpose**: Verifies webhook subscription with Meta
+- Validates webhook challenge from Meta
+- Returns challenge token if signature is valid
+
+#### 12. `POST /webhook/whatsapp`
+Webhook receiver for Meta WhatsApp messages
+
+**Purpose**: Receives messages directly from Meta WhatsApp Business API
+- Processes incoming messages from Meta webhook format
+- Handles text messages, interactive button clicks, and other message types
+- Transforms Meta format to internal format and processes via existing message handler
+- Supports webhook signature validation for security
+- Returns 200 immediately and processes asynchronously
+
+**Webhook Format**:
+```json
+{
+  "entry": [{
+    "changes": [{
+      "value": {
+        "messages": [{
+          "from": "919876543210",
+          "type": "text",
+          "text": { "body": "Hello" },
+          "timestamp": "1748299381"
+        }],
+        "contacts": [{
+          "profile": { "name": "John Doe" }
+        }]
+      }
+    }]
+  }]
+}
+```
+
+**Features**:
+- Direct Meta API integration (bypasses n8n when configured)
+- Webhook signature validation with debug logging
+- Async processing to avoid Meta retries
+- Interactive message support (button clicks, list selections)
+- Automatic message transformation to internal format
 
 ### Status & Monitoring Endpoints
 
@@ -523,9 +574,10 @@ Message metadata inspection
 #### `conversationService.js`
 - **Purpose**: Message history management
 - **Key Functions**:
-  - `getConversationHistory(leadId, limit)` - Fetch message history
-  - `addToHistory(leadId, message, role, messageType, metadata)` - Add message
-  - `getRecentMessages(leadId, limit)` - Get recent messages
+  - `logMessage(leadId, channel, sender, message, messageType, metadata)` - **Primary function** to log messages to `conversations` table (used by all channels)
+  - `getConversationHistory(leadId, limit)` - Fetch message history from `conversations` table
+  - `addToHistory(leadId, message, role, messageType, metadata)` - Wrapper around `logMessage()` for backward compatibility (maps role to sender and sets channel to 'whatsapp')
+  - `getRecentMessages(leadId, limit)` - Get recent messages from `conversations` table
 
 #### `knowledgeBaseService.js`
 - **Purpose**: Knowledge base search
@@ -591,11 +643,11 @@ Message metadata inspection
 7. Build Customer Context
    ├── Fetch from all_leads
    ├── Fetch from whatsapp_sessions
-   └── Fetch from messages (history)
+   └── Fetch from conversations (history)
    ↓
-8. Get Conversation History (last 10 messages)
+8. Get Conversation History (last 10 messages from conversations table)
    ↓
-9. Add User Message to messages table
+9. Add User Message to conversations table (via logMessage())
    ↓
 10. Generate AI Response
     ├── Detect Intent (for auto-buttons)
@@ -604,7 +656,7 @@ Message metadata inspection
     ├── Call Claude API
     └── Parse Response (buttons, urgency)
     ↓
-11. Add Assistant Response to messages table
+11. Add Assistant Response to conversations table (via logMessage())
     ↓
 11.5. Generate Conversation Data
     ├── Generate conversation summary (extract key info: bookings, pricing, topics)
@@ -834,6 +886,31 @@ Git Push → GitHub Actions → SSH to VPS →
 
 ## Integration Points
 
+### Meta WhatsApp Direct Integration
+
+**Direct Webhook Integration**:
+1. Configure Meta webhook in Facebook Developer Console
+2. Set webhook URL: `https://your-server:3002/webhook/whatsapp`
+3. Set verify token: `META_VERIFY_TOKEN` from environment variables
+4. Webhook receives messages directly from Meta
+5. Messages are processed and responses sent via Meta Graph API
+
+**Features**:
+- Direct integration without n8n intermediary
+- Webhook signature validation for security
+- Automatic message transformation from Meta format
+- Interactive message support (button clicks, list selections)
+- Async processing to avoid Meta retries
+- Direct message sending via Meta Graph API v22.0
+
+**Configuration**:
+- `META_VERIFY_TOKEN`: Webhook verification token
+- `META_APP_SECRET`: App secret for signature validation
+- `META_PHONE_NUMBER_ID`: WhatsApp Business phone number ID
+- `META_ACCESS_TOKEN`: Permanent access token for API calls
+
+**See**: Meta WhatsApp Business API documentation for setup details
+
 ### n8n Integration
 
 **Workflow**:
@@ -873,6 +950,7 @@ Git Push → GitHub Actions → SSH to VPS →
 4. **Input Validation**: Zod schema validation
 5. **Error Handling**: Comprehensive error catching
 6. **RLS Policies**: Row-level security in Supabase
+7. **Webhook Signature Validation**: Meta webhook signature verification with fallback and debug logging
 
 ### API Key Management
 
@@ -913,6 +991,16 @@ CLAUDE_MAX_TOKENS=300
 PORT=3002
 NODE_ENV=production
 
+# Meta WhatsApp Webhook Configuration
+# Get these from: https://developers.facebook.com/apps/
+META_VERIFY_TOKEN=your_verify_token_here
+META_APP_SECRET=your_app_secret_here
+
+# Meta WhatsApp Business API Configuration
+# Get these from: https://developers.facebook.com/apps/ → WhatsApp → API Setup
+META_PHONE_NUMBER_ID=your_phone_number_id_here
+META_ACCESS_TOKEN=your_permanent_access_token_here
+
 # Rate Limiting (optional)
 RATE_LIMIT_WINDOW_MS=60000
 RATE_LIMIT_MAX_REQUESTS=100
@@ -938,6 +1026,12 @@ The system automatically detects variables using multiple naming conventions:
 
 - [x] Multi-brand support (PROXe, Windchasers)
 - [x] AI-powered message processing (Claude Sonnet 4)
+- [x] Direct Meta WhatsApp integration (webhook + API)
+- [x] Meta webhook signature validation with debug logging
+- [x] Interactive button message handling in webhook flow
+- [x] New user detection with dynamic 2-button system
+- [x] WhatsApp message sending via Meta Graph API (v22.0)
+- [x] PROXe prompt v4 (updated positioning and capabilities)
 - [x] Unified customer context (web + WhatsApp + voice + social)
 - [x] Phone number normalization (last 10 digits for cross-channel matching)
 - [x] Robust string handling (safeString helper for null/undefined safety)
@@ -955,6 +1049,8 @@ The system automatically detects variables using multiple naming conventions:
 - [x] Real-time status dashboard with version tracking
 - [x] Markdown cleaning for WhatsApp
 - [x] Response time optimization
+- [x] Semantic versioning system
+- [x] Deploy info tracking and trust proxy settings
 
 ### 🔧 Open for Integration
 
@@ -1007,6 +1103,18 @@ curl -X POST http://localhost:3002/api/whatsapp/message \
 
 ## Version History
 
+- **v1.0.1** (2025-12-22): Meta WhatsApp integration and enhanced messaging capabilities
+  - Meta WhatsApp webhook endpoints: Added direct Meta API integration (`/webhook/whatsapp` GET/POST)
+  - Webhook signature validation: Enhanced security with debug logging and fallback mechanisms
+  - WhatsApp message sending: Direct message sending via Meta Graph API (v22.0)
+  - Interactive button handling: Full support for button clicks and interactive messages in webhook flow
+  - New user detection: Dynamic 2-button system for first-time users
+  - PROXe prompt v4: Updated system prompt with new positioning and capabilities
+  - Status metrics fix: Improved response time calculation from timestamps
+  - Semantic versioning: Standardized version management system
+  - Deploy info tracking: Added deployment information and trust proxy settings
+  - Raw body parsing: Proper webhook body handling for signature validation (mounted before JSON parser)
+
 - **v1.0.1** (2025-01-22): Enhanced unified context and conversation intelligence
   - Phone normalization: Uses last 10 digits for cross-channel matching (web + WhatsApp)
   - Safe string handling: Added `safeString()` helper for robust null/undefined handling
@@ -1044,7 +1152,7 @@ curl -X POST http://localhost:3002/api/whatsapp/message \
 
 **This document is maintained as the single source of truth for the WhatsApp PROXe Backend architecture.**
 
-**Last Updated**: 2025-01-22  
+**Last Updated**: 2025-12-22  
 **Version**: 1.0.1  
 **Maintained By**: Development Team
 

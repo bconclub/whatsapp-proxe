@@ -4,16 +4,16 @@ import { getMessagesForRetraining } from './loggingService.js';
 
 /**
  * Aggregate logs from past 24 hours for model retraining
- * Now uses messages table instead of conversation_logs
+ * Now uses conversations table instead of conversation_logs
  * OPEN INTEGRATION: Send to fine-tuning pipeline
  */
 export async function aggregateTrainingData(hours = 24, brand = null) {
   try {
     const cutoffTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-    // Fetch messages from past N hours using messages table
+    // Fetch messages from past N hours using conversations table
     let query = supabase
-      .from('messages')
+      .from('conversations')
       .select(`
         *,
         all_leads (
