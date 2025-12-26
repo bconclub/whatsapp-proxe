@@ -307,46 +307,36 @@ function selectContextButton(aiResponse, userMessage, customerContext = {}) {
   }
   
   // ============================================
-  // NEW USER - guide with buttons
+  // NEW USER FLOW - Guided buttons
   // ============================================
   
   if (isNewUser) {
-    // First greeting - show 3 options
-    if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey') || lowerMessage.trim().length < 15) {
+    const exactMessage = lowerMessage.trim();
+    
+    // User clicked "What's PROXe" button - show only "See a Demo"
+    if (exactMessage === "what's proxe" || exactMessage === "whats proxe") {
+      return ["See a Demo"];
+    }
+    
+    // User clicked "PROXe Features" button - show only "See a Demo"
+    if (exactMessage === "proxe features") {
+      return ["See a Demo"];
+    }
+    
+    // User clicked "See a Demo" button - no buttons, booking flow starts
+    if (exactMessage === "see a demo" || exactMessage.includes("book") || exactMessage.includes("demo") || exactMessage.includes("schedule")) {
+      return [];
+    }
+    
+    // First greeting message only - show 3 buttons
+    // Only if message is a simple greeting (hi, hello, hey) and SHORT
+    const isSimpleGreeting = /^(hi|hello|hey|hii+|hola|yo)[\s!.]*$/i.test(exactMessage);
+    if (isSimpleGreeting) {
       return ["What's PROXe", "See a Demo", "PROXe Features"];
     }
     
-    // User clicked "What's PROXe" - nudge to demo
-    if (lowerMessage === "what's proxe" || lowerMessage.includes("what is proxe")) {
-      return ["See a Demo"];
-    }
-    
-    // User clicked "PROXe Features" - nudge to demo
-    if (lowerMessage === "proxe features" || lowerMessage.includes("features")) {
-      return ["See a Demo"];
-    }
-    
-    // User clicked "See a Demo" - no button, booking flow will handle
-    if (lowerMessage === "see a demo" || lowerMessage.includes("see a demo") || lowerMessage.includes("book")) {
-      return [];
-    }
-    
-    // Asked about features
-    if (lowerMessage.includes('how') || lowerMessage.includes('what') || lowerMessage.includes('feature') || lowerMessage.includes('does it')) {
-      // Teaser response -> See Demo
-      if (responseWordCount < 40) {
-        return ["See a Demo"];
-      }
-      return [];
-    }
-    
-    // Showing interest
-    if (lowerResponse.includes('want to see') || lowerResponse.includes('show you') || lowerResponse.includes('see it in action')) {
-      return ["Book Demo"];
-    }
-    
-    // Default for new user exploring
-    return ["See a Demo"];
+    // User asked a question or typed something else - no buttons, let conversation flow
+    return [];
   }
   
   // ============================================
