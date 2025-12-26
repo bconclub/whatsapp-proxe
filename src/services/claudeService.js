@@ -311,16 +311,31 @@ function selectContextButton(aiResponse, userMessage, customerContext = {}) {
   // ============================================
   
   if (isNewUser) {
-    // First message / greeting
-    if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey') || lowerMessage.length < 10) {
-      return ["Learn More"];
+    // First greeting - show 3 options
+    if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey') || lowerMessage.trim().length < 15) {
+      return ["What's PROXe", "See a Demo", "PROXe Features"];
+    }
+    
+    // User clicked "What's PROXe" - nudge to demo
+    if (lowerMessage === "what's proxe" || lowerMessage.includes("what is proxe")) {
+      return ["See a Demo"];
+    }
+    
+    // User clicked "PROXe Features" - nudge to demo
+    if (lowerMessage === "proxe features" || lowerMessage.includes("features")) {
+      return ["See a Demo"];
+    }
+    
+    // User clicked "See a Demo" - no button, booking flow will handle
+    if (lowerMessage === "see a demo" || lowerMessage.includes("see a demo") || lowerMessage.includes("book")) {
+      return [];
     }
     
     // Asked about features
     if (lowerMessage.includes('how') || lowerMessage.includes('what') || lowerMessage.includes('feature') || lowerMessage.includes('does it')) {
       // Teaser response -> See Demo
       if (responseWordCount < 40) {
-        return ["See Demo"];
+        return ["See a Demo"];
       }
       return [];
     }
@@ -330,8 +345,8 @@ function selectContextButton(aiResponse, userMessage, customerContext = {}) {
       return ["Book Demo"];
     }
     
-    // Default for new user
-    return ["Learn More"];
+    // Default for new user exploring
+    return ["See a Demo"];
   }
   
   // ============================================
