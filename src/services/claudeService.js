@@ -196,7 +196,8 @@ function buildCustomerContextNote(context) {
 
 /**
  * Select context-aware button based on conversation and customer context
- * Returns empty array [] when no button is needed (acknowledgments, casual chat)
+ * Buttons only when they push user forward, not after full answers are given
+ * Returns empty array [] when no button is needed
  * @param {string} aiResponse - AI's response text
  * @param {string} userMessage - User's message
  * @param {object} customerContext - Customer context object with booking info, etc.
@@ -205,91 +206,138 @@ function buildCustomerContextNote(context) {
 function selectContextButton(aiResponse, userMessage, customerContext = {}) {
   const lowerResponse = aiResponse.toLowerCase();
   const lowerMessage = userMessage.toLowerCase();
+  const responseWordCount = aiResponse.split(/\s+/).length;
   
-  // Check booking status
+  // Check user status
   const hasBooking = customerContext?.booking?.exists ||
-                     lowerResponse.includes('booking confirmed') ||
                      lowerResponse.includes('demo is confirmed') ||
                      lowerResponse.includes('demo booked') ||
                      lowerResponse.includes('call scheduled') ||
-                     lowerResponse.includes('already have a demo');
+                     lowerResponse.includes('already have a demo') ||
+                     lowerResponse.includes('your demo is') ||
+                     (lowerResponse.includes('tuesday') && lowerResponse.includes('6:00'));
   
   const hasWebHistory = customerContext?.webConversationSummary || 
                         customerContext?.webUserInputs?.length > 0;
   
-  // NO BUTTON scenarios - casual chat, acknowledgments
-  const noButtonPhrases = ['thanks', 'thank you', 'ok', 'okay', 'got it', 'sounds good', 'great', 'awesome', 'perfect', 'cool', 'nice', 'alright', 'sure', 'yes', 'yep', 'yeah'];
-  const isAcknowledgment = noButtonPhrases.some(phrase => lowerMessage.trim() === phrase || lowerMessage.trim() === phrase + '!');
+  const isNewUser = !hasBooking && !hasWebHistory;
   
-  if (isAcknowledgment) {
-    return []; // No button needed
-  }
+  // ============================================
+  // NO BUTTON SCENARIOS (check first)
+  // ============================================
   
-  // USER HAS BOOKING - specific buttons only
-  if (hasBooking) {
-    // Reschedule intent
-    if (lowerMessage.includes('reschedule') || lowerMessage.includes('change time') || lowerMessage.includes('change date') || lowerMessage.includes('different time') || lowerMessage.includes('different day')) {
-      return ["Reschedule Call"];
-    }
-    
-    // Want human help
-    if (lowerMessage.includes('talk to') || lowerMessage.includes('speak to') || lowerMessage.includes('human') || lowerMessage.includes('someone') || lowerMessage.includes('person') || lowerMessage.includes('team')) {
-      return ["Talk to Team"];
-    }
-    
-    // Want to prepare
-    if (lowerMessage.includes('prepare') || lowerMessage.includes('ready') || lowerMessage.includes('before the call') || lowerMessage.includes('before demo')) {
-      return ["Prepare for Call"];
-    }
-    
-    // Want to learn more
-    if (lowerMessage.includes('how') || lowerMessage.includes('what') || lowerMessage.includes('feature') || lowerMessage.includes('learn') || lowerMessage.includes('understand') || lowerMessage.includes('tell me')) {
-      return ["Learn More"];
-    }
-    
-    // Response mentions getting started
-    if (lowerResponse.includes('get started') || lowerResponse.includes('deploy') || lowerResponse.includes('set up')) {
-      return ["Get Started"];
-    }
-    
-    // Default for booking users asking questions - no button, let them chat
+  // Acknowledgments - never show button
+  const acknowledgments = ['thanks', 'thank you', 'ok', 'okay', 'got it', 'sounds good', 'great', 'awesome', 'perfect', 'cool', 'nice', 'alright', 'sure', 'yes', 'yep', 'yeah', 'no', 'nope'];
+  if (acknowledgments.some(phrase => lowerMessage.trim() === phrase || lowerMessage.trim() === phrase + '!')) {
     return [];
   }
   
-  // USER WITHOUT BOOKING
-  
-  // Pricing questions
-  if (lowerMessage.includes('pricing') || lowerMessage.includes('price') || lowerMessage.includes('cost') || lowerMessage.includes('how much') || lowerMessage.includes('plans')) {
-    return ["View Plans"];
+  // Response already contains full pricing details - no button
+  const hasFullPricing = lowerResponse.includes('$99') && lowerResponse.includes('$199');
+  if (hasFullPricing) {
+    return [];
   }
   
-  // Feature/demo questions  
-  if (lowerMessage.includes('how does') || lowerMessage.includes('feature') || lowerMessage.includes('what can') || lowerMessage.includes('show me') || lowerMessage.includes('how it works') || lowerMessage.includes('demo')) {
-    return ["See Demo"];
+  // Response is long (full answer given) - no button for booking users
+  if (hasBooking && responseWordCount > 40) {
+    return [];
   }
   
-  // Response mentions pricing
-  if (lowerResponse.includes('$99') || lowerResponse.includes('$199') || lowerResponse.includes('pricing') || lowerResponse.includes('per month')) {
-    return ["Book Demo"];
+  // In middle of a flow (asking follow-up question) - no button
+  const askingFollowUp = lowerResponse.includes('what day') || 
+                         lowerResponse.includes('what time') || 
+                         lowerResponse.includes('which') ||
+                         lowerResponse.includes('would you like') ||
+                         lowerResponse.includes('do you prefer') ||
+                         lowerResponse.includes('can you share') ||
+                         lowerResponse.includes('tell me more about');
+  if (askingFollowUp) {
+    return [];
   }
   
-  // Response invites to see demo
-  if (lowerResponse.includes('see a demo') || lowerResponse.includes('show you') || lowerResponse.includes('see it in action') || lowerResponse.includes('want to see')) {
-    return ["Book Demo"];
+  // ============================================
+  // PRESSING ACTIONS (always show if relevant)
+  // ============================================
+  
+  // View Plans - user asking about pricing but not full answer yet
+  if ((lowerMessage.includes('price') || lowerMessage.includes('cost') || lowerMessage.includes('pricing') || lowerMessage.includes('how much') || lowerMessage.includes('plans')) && !hasFullPricing) {
+    // Only if response is a teaser, not full answer
+    if (responseWordCount < 30) {
+      return ["View Plans"];
+    }
   }
   
-  // User with web history but no booking - nudge to book
-  if (hasWebHistory) {
-    return ["Book Demo"];
+  // Get Started - user ready to deploy
+  if (lowerMessage.includes('get started') || lowerMessage.includes('deploy') || lowerMessage.includes('set up') || lowerMessage.includes('start using') || lowerMessage.includes('ready to')) {
+    return ["Get Started"];
   }
   
-  // New user exploring
-  if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey')) {
+  // Talk to Team - needs human
+  if (lowerMessage.includes('talk to') || lowerMessage.includes('speak to') || lowerMessage.includes('human') || lowerMessage.includes('someone') || lowerMessage.includes('person') || lowerMessage.includes('support') || lowerMessage.includes('help me')) {
+    return ["Talk to Team"];
+  }
+  
+  // ============================================
+  // BOOKING USER - minimal buttons
+  // ============================================
+  
+  if (hasBooking) {
+    // Only show button if response is very short teaser
+    if (responseWordCount < 20) {
+      // Check if teasing more info
+      if (lowerResponse.includes('want to') || lowerResponse.includes('would you like') || lowerResponse.includes('shall i')) {
+        return ["Learn More"];
+      }
+    }
+    // Default: no button for booking users
+    return [];
+  }
+  
+  // ============================================
+  // RETURNING USER (web history, no booking)
+  // ============================================
+  
+  if (hasWebHistory && !hasBooking) {
+    // Nudge toward booking if response invites it
+    if (lowerResponse.includes('see it') || lowerResponse.includes('show you') || lowerResponse.includes('demo') || lowerResponse.includes('book')) {
+      return ["Book Demo"];
+    }
+    // Otherwise no button
+    return [];
+  }
+  
+  // ============================================
+  // NEW USER - guide with buttons
+  // ============================================
+  
+  if (isNewUser) {
+    // First message / greeting
+    if (lowerMessage.includes('hi') || lowerMessage.includes('hello') || lowerMessage.includes('hey') || lowerMessage.length < 10) {
+      return ["Learn More"];
+    }
+    
+    // Asked about features
+    if (lowerMessage.includes('how') || lowerMessage.includes('what') || lowerMessage.includes('feature') || lowerMessage.includes('does it')) {
+      // Teaser response -> See Demo
+      if (responseWordCount < 40) {
+        return ["See Demo"];
+      }
+      return [];
+    }
+    
+    // Showing interest
+    if (lowerResponse.includes('want to see') || lowerResponse.includes('show you') || lowerResponse.includes('see it in action')) {
+      return ["Book Demo"];
+    }
+    
+    // Default for new user
     return ["Learn More"];
   }
   
-  // Default for new users
-  return ["Learn More"];
+  // ============================================
+  // DEFAULT - no button
+  // ============================================
+  return [];
 }
 
 /**
