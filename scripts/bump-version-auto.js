@@ -23,26 +23,27 @@ let major, minor;
 if (currentVersion.includes('.')) {
   const parts = currentVersion.split('.');
   major = parseInt(parts[0]) || 1;
-  const patch = parseInt(parts[2]) || 0;
-  const minorPart = parseInt(parts[1]) || 0;
-  // Convert 1.0.1 -> 1.01, 1.0.2 -> 1.02
-  minor = minorPart * 100 + patch;
-} else {
-  // Already in 1.01 format
-  const match = currentVersion.match(/^(\d+)\.?(\d+)$/);
-  if (match) {
-    major = parseInt(match[1]) || 1;
-    minor = parseInt(match[2]) || 1;
+  
+  // Handle 1.0.1 format (semantic versioning)
+  if (parts.length === 3) {
+    const patch = parseInt(parts[2]) || 0;
+    minor = parseInt(parts[1]) || 0;
+    // Convert 1.0.1 -> 1.01 (minor=0, patch=1 -> minor=01)
+    minor = minor * 10 + patch;
   } else {
-    major = 1;
-    minor = 1;
+    // Handle 1.01 format (already in target format)
+    minor = parseInt(parts[1]) || 1;
   }
+} else {
+  // Single number, default to 1.01
+  major = 1;
+  minor = 1;
 }
 
-// Increment minor version
+// Increment minor version (01 -> 02, 02 -> 03, etc.)
 minor += 1;
 
-// Format as v1.01, v1.02, etc.
+// Format as 1.01, 1.02, etc. (always 2 digits for minor)
 const newVersion = `${major}.${minor.toString().padStart(2, '0')}`;
 const newVersionFormatted = `v${newVersion}`;
 
