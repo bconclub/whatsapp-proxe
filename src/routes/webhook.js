@@ -374,6 +374,31 @@ async function processWebhook(webhookData) {
           // Import the handler function and call it directly
           await handleMessage(transformedMessage);
         }
+
+        // After message handling, check for status updates
+        const statuses = change?.value?.statuses || [];
+        if (statuses.length > 0) {
+          for (const statusItem of statuses) {
+            try {
+              await fetch('https://build.goproxe.com/webhook/whatsapp-delivery-status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  message_id: statusItem.id,
+                  status: statusItem.status,
+                  timestamp: statusItem.timestamp,
+                  recipient: statusItem.recipient_id
+                })
+              });
+              logger.info(`Forwarded status update to n8n: ${statusItem.id} - ${statusItem.status}`);
+            } catch (error) {
+              logger.error(`Failed to forward status update to n8n: ${error.message}`, {
+                statusItem,
+                error: error.message
+              });
+            }
+          }
+        }
       }
     }
   } catch (error) {
