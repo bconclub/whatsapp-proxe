@@ -303,12 +303,14 @@ async function processWebhook(webhookData) {
 
       for (const change of entryItem.changes) {
         const value = change.value;
-        if (!value || !value.messages || !Array.isArray(value.messages)) {
+        if (!value) {
           continue;
         }
 
-        // Process each message
-        for (const message of value.messages) {
+        // Process messages if present
+        if (value.messages && Array.isArray(value.messages)) {
+          // Process each message
+          for (const message of value.messages) {
           // Extract phone number (remove country code prefix if present)
           let phone = message.from;
           if (!phone) {
@@ -399,9 +401,10 @@ async function processWebhook(webhookData) {
           // Call existing message handler
           // Import the handler function and call it directly
           await handleMessage(transformedMessage);
+          }
         }
 
-        // After message handling, check for status updates
+        // Check for status updates (process even if no messages)
         const statuses = change?.value?.statuses || [];
         if (statuses.length > 0) {
           console.log(`📊 Processing ${statuses.length} status update(s) from Meta webhook`);
