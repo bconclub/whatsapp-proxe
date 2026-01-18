@@ -427,5 +427,85 @@ function determineAction(buttonId, label) {
   return 'unknown';
 }
 
+/**
+ * POST /api/whatsapp/status
+ * Receives WhatsApp message status updates from Meta and forwards to n8n
+ */
+router.post('/status', async (req, res) => {
+  try {
+    logger.info('Received WhatsApp status webhook from Meta');
+
+    // Extract status data from Meta webhook format
+    const { entry } = req.body;
+    
+    if (!entry || !Array.isArray(entry) || entry.length === 0) {
+      logger.warn('Invalid status webhook format: missing entry');
+      return res.status(200).json({ status: 'ok', message: 'No entry data' });
+    }
+
+    // Process each entry
+    const statusUpdates = [];
+    
+    for (const entryItem of entry) {
+      const changes = entryItem?.changes || [];
+      
+      for (const change of changes) {
+        const statuses = change?.value?.statuses || [];
+        
+        for (const statusItem of statuses) {
+          statusUpdates.push({
+            message_id: statusItem.id,
+            status: statusItem.status, // sent, delivered, read, failed
+            timestamp: statusItem.timestamp,
+            recipient: statusItem.recipient_id
+          });
+        }
+      }
+    }
+
+    if (statusUpdates.length === 0) {
+      logger.warn('No status updates found in webhook');
+      return res.status(200).json({ status: 'ok', message: 'No status updates' });
+    }
+
+    // Forward each status update to n8n
+    const n8nWebhookUrl = process.env.N8N_WHATSAPP_STATUS_WEBHOOK || 'https://build.goproxe.com/webhook/whatsapp-delivery-status';
+    
+    for (const statusUpdate of statusUpdates) {
+      try {
+        await fetch(n8nWebhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(statusUpdate)
+        });
+        
+        logger.info(`Forwarded status update to n8n: ${statusUpdate.message_id} - ${statusUpdate.status}`);
+      } catch (error) {
+        logger.error(`Failed to forward status update to n8n: ${error.message}`, {
+          statusUpdate,
+          error: error.message
+        });
+        // Continue processing other updates even if one fails
+      }
+    }
+
+    // Always return 200 OK to Meta (even if forwarding failed)
+    res.status(200).json({ 
+      status: 'ok', 
+      processed: statusUpdates.length 
+    });
+
+  } catch (error) {
+    logger.error('Error processing WhatsApp status webhook:', error);
+    // Return 200 OK to Meta even on error (prevents retries)
+    res.status(200).json({ 
+      status: 'error', 
+      message: error.message 
+    });
+  }
+});
+
 export default router;
 

@@ -1,7 +1,7 @@
 # WhatsApp PROXe - Master Build Architecture
 
-**Version:** 1.0.1  
-**Last Updated:** 2025-12-22  
+**Version:** 1.05  
+**Last Updated:** 2026-01-18  
 **Status:** Production Ready
 
 > **This document is the single source of truth for the WhatsApp PROXe Backend build architecture.**
@@ -1040,8 +1040,9 @@ The system automatically detects variables using multiple naming conventions:
 - [x] Customer context enrichment from unified_context
 - [x] Conversation history management
 - [x] Knowledge base integration
-- [x] Automatic button generation (intent-based)
-- [x] WhatsApp message formatting (text, buttons, carousels)
+- [x] WhatsApp summary sync to unified_context (all_leads.unified_context.whatsapp)
+- [x] Simplified button logic (text-only responses, no buttons)
+- [x] WhatsApp text formatting (preserves *bold*, _italic_, ~strikethrough~)
 - [x] Performance monitoring (input-to-output gap)
 - [x] Comprehensive logging and analytics
 - [x] Rate limiting and security
@@ -1049,8 +1050,9 @@ The system automatically detects variables using multiple naming conventions:
 - [x] Real-time status dashboard with version tracking
 - [x] Markdown cleaning for WhatsApp
 - [x] Response time optimization
-- [x] Semantic versioning system
+- [x] Automatic versioning system (v1.01 format with auto-bump)
 - [x] Deploy info tracking and trust proxy settings
+- [x] Cross-channel summary sync (WhatsApp → all_leads.unified_context)
 
 ### 🔧 Open for Integration
 
