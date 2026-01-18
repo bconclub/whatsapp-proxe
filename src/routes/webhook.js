@@ -264,18 +264,25 @@ router.post('/whatsapp', async (req, res) => {
  */
 async function processWebhook(webhookData) {
   try {
+    // Parse buffer to JSON if needed
+    if (Buffer.isBuffer(webhookData)) {
+      webhookData = JSON.parse(webhookData.toString('utf8'));
+    }
+    
+    const entry = webhookData.entry || [];
+    
     // Extract messages from Meta webhook format
-    if (!webhookData.entry || !Array.isArray(webhookData.entry)) {
+    if (!entry || !Array.isArray(entry)) {
       logger.warn('Invalid webhook format: missing entry array');
       return;
     }
 
-    for (const entry of webhookData.entry) {
-      if (!entry.changes || !Array.isArray(entry.changes)) {
+    for (const entryItem of entry) {
+      if (!entryItem.changes || !Array.isArray(entryItem.changes)) {
         continue;
       }
 
-      for (const change of entry.changes) {
+      for (const change of entryItem.changes) {
         const value = change.value;
         if (!value || !value.messages || !Array.isArray(value.messages)) {
           continue;
