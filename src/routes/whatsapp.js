@@ -433,6 +433,8 @@ function determineAction(buttonId, label) {
  */
 router.post('/status', async (req, res) => {
   try {
+    // Log full status webhook payload
+    console.log('📊 STATUS WEBHOOK RECEIVED:', JSON.stringify(req.body, null, 2));
     logger.info('Received WhatsApp status webhook from Meta');
 
     // Extract status data from Meta webhook format
@@ -464,16 +466,22 @@ router.post('/status', async (req, res) => {
     }
 
     if (statusUpdates.length === 0) {
+      console.log('⚠️  No status updates found in webhook payload');
       logger.warn('No status updates found in webhook');
       return res.status(200).json({ status: 'ok', message: 'No status updates' });
     }
+
+    console.log(`📊 Processing ${statusUpdates.length} status update(s)`);
+    statusUpdates.forEach(update => {
+      console.log(`   - ${update.message_id}: ${update.status} (recipient: ${update.recipient})`);
+    });
 
     // Forward each status update to n8n
     const n8nWebhookUrl = process.env.N8N_WHATSAPP_STATUS_WEBHOOK || 'https://build.goproxe.com/webhook/whatsapp-delivery-status';
     
     for (const statusUpdate of statusUpdates) {
       try {
-        await fetch(n8nWebhookUrl, {
+        const response = await fetch(n8nWebhookUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -481,8 +489,18 @@ router.post('/status', async (req, res) => {
           body: JSON.stringify(statusUpdate)
         });
         
-        logger.info(`Forwarded status update to n8n: ${statusUpdate.message_id} - ${statusUpdate.status}`);
+        if (response.ok) {
+          console.log(`✅ Successfully forwarded status to n8n: ${statusUpdate.message_id} - ${statusUpdate.status}`);
+          logger.info(`Forwarded status update to n8n: ${statusUpdate.message_id} - ${statusUpdate.status}`);
+        } else {
+          console.error(`❌ Failed to forward status to n8n: ${response.status} ${response.statusText}`);
+          logger.error(`Failed to forward status update to n8n: ${response.status} ${response.statusText}`, {
+            statusUpdate,
+            responseStatus: response.status
+          });
+        }
       } catch (error) {
+        console.error(`❌ Error forwarding status to n8n:`, error.message);
         logger.error(`Failed to forward status update to n8n: ${error.message}`, {
           statusUpdate,
           error: error.message
